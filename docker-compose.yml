@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: flashdrop
+      POSTGRES_USER: flashdrop
+      POSTGRES_PASSWORD: flashdrop
+    ports:
+      - "5433:5432"
+    volumes:
+      - flashdrop_pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6380:6379"
+
+volumes:
+  flashdrop_pg_data:
