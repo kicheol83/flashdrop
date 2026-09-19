@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlashDrop — jonli konsol</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0F1620;
+    --panel: #161F2B;
+    --panel-raised: #1C2733;
+    --border: #29384A;
+    --text: #EDEFF2;
+    --muted: #8C97A6;
+    --accent: #F2A93B;
+    --accent-dim: #6B551F;
+    --success: #3FBFA0;
+    --danger: #E8654C;
+    --info: #6C8CD5;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+
+  a { color: var(--accent); }
+
+  .app {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 20px 60px;
+  }
+
+  header.top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .wordmark {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  .wordmark span { color: var(--accent); }
+
+  .status-pill {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--panel);
+  }
+
+  .status-pill b { color: var(--text); font-weight: 600; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  @media (max-width: 860px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 22px;
+  }
+
+  .panel h2 {
+    margin: 0 0 18px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+
+  .field { margin-bottom: 16px; }
+
+  .field label {
+    display: block;
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .field input,
+  .field select {
+    width: 100%;
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: 10px 12px;
+  }
+
+  .field input:focus,
+  .field select:focus,
+  button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .field-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .field-row input { flex: 1; }
+
+  .icon-btn {
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-size: 15px;
+    width: 40px;
+    cursor: pointer;
+  }
+
+  .icon-btn:hover { color: var(--text); border-color: var(--accent); }
+
+  button.primary {
+    width: 100%;
+    background: var(--accent);
+    color: #1A1206;
+    border: none;
+    border-radius: 6px;
+    padding: 13px 16px;
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.08s ease;
+  }
+
+  button.primary:hover { transform: translateY(-1px); }
+  button.primary:active { transform: translateY(0); }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  button.secondary {
+    width: 100%;
+    margin-top: 10px;
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-family: var(--sans);
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  button.secondary:hover { color: var(--text); border-color: var(--muted); }
+
+  .response-box {
+    margin-top: 18px;
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-height: 42px;
+  }
+
+  .response-box.ok { color: var(--success); border-color: var(--success); }
+  .response-box.bad { color: var(--danger); border-color: var(--danger); }
+
+  .hero {
+    text-align: center;
+    padding: 26px 10px 30px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+
+  .hero .remaining {
+    font-family: var(--mono);
+    font-size: 76px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--accent);
+    transition: color 0.4s ease;
+  }
+
+  .hero .remaining.pulse { animation: pulse 0.5s ease; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero .remaining.pulse { animation: none; }
+    button.primary { transition: none; }
+  }
+
+  @keyframes pulse {
+    0% { color: var(--text); }
+    100% { color: var(--accent); }
+  }
+
+  .hero .label {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .hero .label b { color: var(--text); }
+
+  .tally {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-bottom: 22px;
+  }
+
+  @media (max-width: 640px) {
+    .tally { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .tally-item {
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 10px;
+    text-align: center;
+  }
+
+  .tally-item .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+  }
+
+  .tally-item .n {
+    font-family: var(--mono);
+    font-size: 24px;
+    font-weight: 600;
+    display: block;
+    margin-top: 4px;
+  }
+
+  .tally-item .l {
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+
+  .dot.success { background: var(--success); }
+  .dot.soldout { background: var(--danger); }
+  .dot.already { background: var(--info); }
+  .dot.notstarted { background: var(--muted); }
+  .dot.ratelimited { background: #C25AE0; }
+
+  .ticker-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .ticker-head h2 { margin: 0; }
+
+  .ticker {
+    max-height: 360px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel-raised);
+  }
+
+  .ticker-row {
+    display: grid;
+    grid-template-columns: 90px 1fr auto;
+    gap: 10px;
+    padding: 9px 12px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+  }
+
+  .ticker-row:last-child { border-bottom: none; }
+
+  .ticker-row .time { color: var(--muted); }
+  .ticker-row .who { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .badge {
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+
+  .badge.SUCCESS { background: rgba(63,191,160,0.15); color: var(--success); }
+  .badge.SOLD_OUT { background: rgba(232,101,76,0.15); color: var(--danger); }
+  .badge.ALREADY_CLAIMED { background: rgba(108,140,213,0.15); color: var(--info); }
+  .badge.CAMPAIGN_NOT_STARTED { background: rgba(140,151,166,0.15); color: var(--muted); }
+  .badge.RATE_LIMITED { background: rgba(194,90,224,0.15); color: #C25AE0; }
+  .badge.ERROR { background: rgba(232,101,76,0.15); color: var(--danger); }
+
+  .empty {
+    padding: 24px 12px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  footer.note {
+    margin-top: 22px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="top">
+    <div class="wordmark">FLASH<span>DROP</span></div>
+    <div class="status-pill">
+      <b id="pillCode">FLASH50</b> · <span id="pillStrategy">Locksiz</span>
+    </div>
+  </header>
+
+  <div class="grid">
+
+    <section class="panel">
+      <h2>Kupon olish</h2>
+
+      <div class="field">
+        <label for="baseUrl">Server manzili</label>
+        <input id="baseUrl" type="text" value="http://localhost:8080">
+      </div>
+
+      <div class="field">
+        <label for="strategy">Strategiya</label>
+        <select id="strategy">
+          <option value="nolock" data-code="FLASH50">Locksiz</option>
+          <option value="forupdate" data-code="FLASH50">SELECT FOR UPDATE</option>
+          <option value="optimistic" data-code="FLASH50">Optimistic lock</option>
+          <option value="redis" data-code="FLASH50-REDIS">Redis atomik</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="campaignCode">Kampaniya kodi</label>
+        <input id="campaignCode" type="text" value="FLASH50">
+      </div>
+
+      <div class="field">
+        <label for="userId">User ID</label>
+        <div class="field-row">
+          <input id="userId" type="text">
+          <button class="icon-btn" id="regenBtn" title="Yangi user ID">↻</button>
+        </div>
+      </div>
+
+      <button class="primary" id="claimBtn">Kupon olish</button>
+      <button class="secondary" id="syncBtn" style="display:none;">Redis'ni sinxronlash (init)</button>
+
+      <div class="response-box" id="responseBox">so'rov kutilmoqda…</div>
+    </section>
+
+    <section class="panel">
+      <div class="hero">
+        <div class="remaining" id="remainingNum">—</div>
+        <div class="label">qolgan &nbsp;·&nbsp; jami <b id="totalNum">—</b> tadan</div>
+      </div>
+
+      <div class="tally">
+        <div class="tally-item"><span class="dot success"></span><span class="l">Success</span><span class="n" id="cSuccess">0</span></div>
+        <div class="tally-item"><span class="dot soldout"></span><span class="l">Sold out</span><span class="n" id="cSoldOut">0</span></div>
+        <div class="tally-item"><span class="dot already"></span><span class="l">Already claimed</span><span class="n" id="cAlready">0</span></div>
+        <div class="tally-item"><span class="dot notstarted"></span><span class="l">Not started</span><span class="n" id="cNotStarted">0</span></div>
+        <div class="tally-item"><span class="dot ratelimited"></span><span class="l">Rate limited</span><span class="n" id="cRateLimited">0</span></div>
+      </div>
+
+      <div class="ticker-head">
+        <h2>Jonli log</h2>
+      </div>
+      <div class="ticker" id="ticker">
+        <div class="empty">Hali urinish yo'q — "Kupon olish" tugmasini bosing.</div>
+      </div>
+    </section>
+
+  </div>
+
+  <footer class="note">
+    Bu sahifa <code>fetch</code> orqali to'g'ridan-to'g'ri lokal FlashDrop serveriga (yuqoridagi manzil) murojaat qiladi. Serveringiz <code>docker compose up -d</code> va <code>.\gradlew.bat bootRun</code> bilan ishlab turishi kerak. Tepadagi tally shu sahifa sessiyasida ko'rilgan urinishlar — sahifani yangilasangiz nolga tushadi; "qolgan" raqami esa serverdan (Redis strategiyasida Redis'dan) jonli o'qiladi.
+  </footer>
+
+</div>
+
+<script>
+  const STRATEGY_DEFAULT_CODE = {
+    nolock: 'FLASH50',
+    forupdate: 'FLASH50',
+    optimistic: 'FLASH50',
+    redis: 'FLASH50-REDIS'
+  };
+
+  const STRATEGY_LABEL = {
+    nolock: 'Locksiz',
+    forupdate: 'SELECT FOR UPDATE',
+    optimistic: 'Optimistic lock',
+    redis: 'Redis atomik'
+  };
+
+  const els = {
+    baseUrl: document.getElementById('baseUrl'),
+    strategy: document.getElementById('strategy'),
+    campaignCode: document.getElementById('campaignCode'),
+    userId: document.getElementById('userId'),
+    regenBtn: document.getElementById('regenBtn'),
+    claimBtn: document.getElementById('claimBtn'),
+    syncBtn: document.getElementById('syncBtn'),
+    responseBox: document.getElementById('responseBox'),
+    remainingNum: document.getElementById('remainingNum'),
+    totalNum: document.getElementById('totalNum'),
+    ticker: document.getElementById('ticker'),
+    pillCode: document.getElementById('pillCode'),
+    pillStrategy: document.getElementById('pillStrategy'),
+    cSuccess: document.getElementById('cSuccess'),
+    cSoldOut: document.getElementById('cSoldOut'),
+    cAlready: document.getElementById('cAlready'),
+    cNotStarted: document.getElementById('cNotStarted'),
+    cRateLimited: document.getElementById('cRateLimited')
+  };
+
+  const counts = { SUCCESS: 0, SOLD_OUT: 0, ALREADY_CLAIMED: 0, CAMPAIGN_NOT_STARTED: 0, RATE_LIMITED: 0 };
+  let statusTimer = null;
+  let lastRemaining = null;
+
+  function randomUserId() {
+    return 'web-' + Math.random().toString(36).slice(2, 8);
+  }
+
+  function currentPrefix() {
+    return '/api/v1/' + els.strategy.value;
+  }
+
+  function updatePill() {
+    els.pillCode.textContent = els.campaignCode.value || '—';
+    els.pillStrategy.textContent = STRATEGY_LABEL[els.strategy.value];
+  }
+
+  function onStrategyChange() {
+    const code = STRATEGY_DEFAULT_CODE[els.strategy.value];
+    els.campaignCode.value = code;
+    els.syncBtn.style.display = els.strategy.value === 'redis' ? 'block' : 'none';
+    updatePill();
+    restartStatusPolling();
+  }
+
+  function renderCounts() {
+    els.cSuccess.textContent = counts.SUCCESS;
+    els.cSoldOut.textContent = counts.SOLD_OUT;
+    els.cAlready.textContent = counts.ALREADY_CLAIMED;
+    els.cNotStarted.textContent = counts.CAMPAIGN_NOT_STARTED;
+    els.cRateLimited.textContent = counts.RATE_LIMITED;
+  }
+
+  function prependTicker(status, userId) {
+    const empty = els.ticker.querySelector('.empty');
+    if (empty) empty.remove();
+
+    const row = document.createElement('div');
+    row.className = 'ticker-row';
+    const time = new Date().toLocaleTimeString('uz-UZ', { hour12: false });
+    row.innerHTML =
+      '<span class="time">' + time + '</span>' +
+      '<span class="who">' + userId + '</span>' +
+      '<span class="badge ' + status + '">' + status + '</span>';
+    els.ticker.prepend(row);
+
+    while (els.ticker.children.length > 60) {
+      els.ticker.removeChild(els.ticker.lastChild);
+    }
+  }
+
+  async function claim() {
+    const userId = els.userId.value.trim();
+    if (!userId) {
+      els.responseBox.textContent = 'User ID bo\'sh bo\'lishi mumkin emas';
+      els.responseBox.className = 'response-box bad';
+      return;
+    }
+
+    els.claimBtn.disabled = true;
+    const url = els.baseUrl.value.replace(/\/$/, '') + currentPrefix() +
+      '/campaigns/' + encodeURIComponent(els.campaignCode.value) + '/claim?userId=' + encodeURIComponent(userId);
+
+    try {
+      const res = await fetch(url, { method: 'POST' });
+      const bodyText = await res.text();
+      let body;
+      try { body = JSON.parse(bodyText); } catch (e) { body = null; }
+
+      if (body && body.status) {
+        els.responseBox.textContent = JSON.stringify(body, null, 2);
+        els.responseBox.className = 'response-box ' + (body.status === 'SUCCESS' ? 'ok' : (res.status >= 400 ? 'bad' : ''));
+        if (counts[body.status] !== undefined) {
+          counts[body.status]++;
+          renderCounts();
+        }
+        prependTicker(body.status, userId);
+      } else {
+        els.responseBox.textContent = 'HTTP ' + res.status + '\n' + bodyText;
+        els.responseBox.className = 'response-box bad';
+        prependTicker('ERROR', userId);
+      }
+    } catch (err) {
+      els.responseBox.textContent = 'So\'rov muvaffaqiyatsiz: ' + err.message + '\n\nServer ishlab turganini va CORS sozlamalarini tekshiring.';
+      els.responseBox.className = 'response-box bad';
+      prependTicker('ERROR', userId);
+    } finally {
+      els.claimBtn.disabled = false;
+      fetchStatus();
+    }
+  }
+
+  async function syncRedis() {
+    els.syncBtn.disabled = true;
+    const url = els.baseUrl.value.replace(/\/$/, '') + '/api/v1/redis/campaigns';
+    const startsAt = new Date(Date.now() - 60000).toISOString().slice(0, 19);
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: els.campaignCode.value, totalQuantity: 50, startsAt: startsAt })
+      });
+      els.responseBox.textContent = 'Redis kampaniyasi sinxronlandi: ' + els.campaignCode.value + ' (50 dona)';
+      els.responseBox.className = 'response-box ok';
+    } catch (err) {
+      els.responseBox.textContent = 'Sync muvaffaqiyatsiz: ' + err.message;
+      els.responseBox.className = 'response-box bad';
+    } finally {
+      els.syncBtn.disabled = false;
+      fetchStatus();
+    }
+  }
+
+  async function fetchStatus() {
+    const url = els.baseUrl.value.replace(/\/$/, '') + currentPrefix() +
+      '/campaigns/' + encodeURIComponent(els.campaignCode.value);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        els.remainingNum.textContent = '—';
+        els.totalNum.textContent = '—';
+        return;
+      }
+      const body = await res.json();
+      if (lastRemaining !== null && lastRemaining !== body.remainingQuantity) {
+        els.remainingNum.classList.remove('pulse');
+        void els.remainingNum.offsetWidth;
+        els.remainingNum.classList.add('pulse');
+      }
+      lastRemaining = body.remainingQuantity;
+      els.remainingNum.textContent = body.remainingQuantity;
+      els.totalNum.textContent = body.totalQuantity;
+    } catch (err) {
+      els.remainingNum.textContent = '—';
+    }
+  }
+
+  function restartStatusPolling() {
+    if (statusTimer) clearInterval(statusTimer);
+    lastRemaining = null;
+    fetchStatus();
+    statusTimer = setInterval(fetchStatus, 1200);
+  }
+
+  els.regenBtn.addEventListener('click', () => { els.userId.value = randomUserId(); });
+  els.claimBtn.addEventListener('click', claim);
+  els.syncBtn.addEventListener('click', syncRedis);
+  els.strategy.addEventListener('change', onStrategyChange);
+  els.campaignCode.addEventListener('change', () => { updatePill(); restartStatusPolling(); });
+  els.baseUrl.addEventListener('change', restartStatusPolling);
+
+  els.userId.value = randomUserId();
+  updatePill();
+  restartStatusPolling();
+</script>
+</body>
+</html>
