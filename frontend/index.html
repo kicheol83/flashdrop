@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="uz">
+<html lang="ko">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
-<title>FlashDrop — jonli konsol</title>
+<title>FlashDrop</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -75,6 +75,39 @@
   }
 
   .status-pill b { color: var(--text); font-weight: 600; }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .lang-switch {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    overflow: hidden;
+    background: var(--panel);
+  }
+
+  .lang-switch button {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .lang-switch button:hover { color: var(--text); }
+
+  .lang-switch button.active {
+    background: var(--accent);
+    color: var(--bg);
+  }
 
   .grid {
     display: grid;
@@ -349,33 +382,40 @@
 
   <header class="top">
     <div class="wordmark">FLASH<span>DROP</span></div>
-    <div class="status-pill">
-      <b id="pillCode">FLASH50</b> · <span id="pillStrategy">Locksiz</span>
+    <div class="header-right">
+      <div class="status-pill">
+        <b id="pillCode">FLASH50</b> · <span id="pillStrategy"></span>
+      </div>
+      <div class="lang-switch" role="group" aria-label="Language">
+        <button type="button" data-lang="ko">KO</button>
+        <button type="button" data-lang="en">EN</button>
+        <button type="button" data-lang="uz">UZ</button>
+      </div>
     </div>
   </header>
 
   <div class="grid">
 
     <section class="panel">
-      <h2>Kupon olish</h2>
+      <h2 data-i18n="claimTitle"></h2>
 
       <div class="field">
-        <label for="baseUrl">Server manzili</label>
+        <label for="baseUrl" data-i18n="serverUrl"></label>
         <input id="baseUrl" type="text" value="http://localhost:8080">
       </div>
 
       <div class="field">
-        <label for="strategy">Strategiya</label>
+        <label for="strategy" data-i18n="strategy"></label>
         <select id="strategy">
-          <option value="nolock" data-code="FLASH50">Locksiz</option>
+          <option value="nolock" data-code="FLASH50" data-i18n="strategyNolock"></option>
           <option value="forupdate" data-code="FLASH50">SELECT FOR UPDATE</option>
-          <option value="optimistic" data-code="FLASH50">Optimistic lock</option>
-          <option value="redis" data-code="FLASH50-REDIS">Redis atomik</option>
+          <option value="optimistic" data-code="FLASH50" data-i18n="strategyOptimistic"></option>
+          <option value="redis" data-code="FLASH50-REDIS" data-i18n="strategyRedis"></option>
         </select>
       </div>
 
       <div class="field">
-        <label for="campaignCode">Kampaniya kodi</label>
+        <label for="campaignCode" data-i18n="campaignCode"></label>
         <input id="campaignCode" type="text" value="FLASH50">
       </div>
 
@@ -383,43 +423,41 @@
         <label for="userId">User ID</label>
         <div class="field-row">
           <input id="userId" type="text">
-          <button class="icon-btn" id="regenBtn" title="Yangi user ID">↻</button>
+          <button class="icon-btn" id="regenBtn" data-i18n-title="newUserId">↻</button>
         </div>
       </div>
 
-      <button class="primary" id="claimBtn">Kupon olish</button>
-      <button class="secondary" id="syncBtn" style="display:none;">Redis'ni sinxronlash (init)</button>
+      <button class="primary" id="claimBtn" data-i18n="claimButton"></button>
+      <button class="secondary" id="syncBtn" style="display:none;" data-i18n="syncButton"></button>
 
-      <div class="response-box" id="responseBox">so'rov kutilmoqda…</div>
+      <div class="response-box" id="responseBox" data-i18n="waiting"></div>
     </section>
 
     <section class="panel">
       <div class="hero">
         <div class="remaining" id="remainingNum">—</div>
-        <div class="label">qolgan &nbsp;·&nbsp; jami <b id="totalNum">—</b> tadan</div>
+        <div class="label"><span data-i18n="remaining"></span> &nbsp;·&nbsp; <span data-i18n="totalPrefix"></span> <b id="totalNum">—</b><span data-i18n="totalSuffix"></span></div>
       </div>
 
       <div class="tally">
-        <div class="tally-item"><span class="dot success"></span><span class="l">Success</span><span class="n" id="cSuccess">0</span></div>
-        <div class="tally-item"><span class="dot soldout"></span><span class="l">Sold out</span><span class="n" id="cSoldOut">0</span></div>
-        <div class="tally-item"><span class="dot already"></span><span class="l">Already claimed</span><span class="n" id="cAlready">0</span></div>
-        <div class="tally-item"><span class="dot notstarted"></span><span class="l">Not started</span><span class="n" id="cNotStarted">0</span></div>
-        <div class="tally-item"><span class="dot ratelimited"></span><span class="l">Rate limited</span><span class="n" id="cRateLimited">0</span></div>
+        <div class="tally-item"><span class="dot success"></span><span class="l" data-i18n="tallySuccess"></span><span class="n" id="cSuccess">0</span></div>
+        <div class="tally-item"><span class="dot soldout"></span><span class="l" data-i18n="tallySoldOut"></span><span class="n" id="cSoldOut">0</span></div>
+        <div class="tally-item"><span class="dot already"></span><span class="l" data-i18n="tallyAlready"></span><span class="n" id="cAlready">0</span></div>
+        <div class="tally-item"><span class="dot notstarted"></span><span class="l" data-i18n="tallyNotStarted"></span><span class="n" id="cNotStarted">0</span></div>
+        <div class="tally-item"><span class="dot ratelimited"></span><span class="l" data-i18n="tallyRateLimited"></span><span class="n" id="cRateLimited">0</span></div>
       </div>
 
       <div class="ticker-head">
-        <h2>Jonli log</h2>
+        <h2 data-i18n="liveLog"></h2>
       </div>
       <div class="ticker" id="ticker">
-        <div class="empty">Hali urinish yo'q — "Kupon olish" tugmasini bosing.</div>
+        <div class="empty" data-i18n="emptyLog"></div>
       </div>
     </section>
 
   </div>
 
-  <footer class="note">
-    Bu sahifa <code>fetch</code> orqali to'g'ridan-to'g'ri lokal FlashDrop serveriga (yuqoridagi manzil) murojaat qiladi. Serveringiz <code>docker compose up -d</code> va <code>.\gradlew.bat bootRun</code> bilan ishlab turishi kerak. Tepadagi tally shu sahifa sessiyasida ko'rilgan urinishlar — sahifani yangilasangiz nolga tushadi; "qolgan" raqami esa serverdan (Redis strategiyasida Redis'dan) jonli o'qiladi.
-  </footer>
+  <footer class="note" data-i18n="footer"></footer>
 
 </div>
 
@@ -431,12 +469,112 @@
     redis: 'FLASH50-REDIS'
   };
 
-  const STRATEGY_LABEL = {
-    nolock: 'Locksiz',
-    forupdate: 'SELECT FOR UPDATE',
-    optimistic: 'Optimistic lock',
-    redis: 'Redis atomik'
+  const I18N = {
+    ko: {
+      claimTitle: '쿠폰 발급',
+      serverUrl: '서버 주소',
+      strategy: '전략',
+      strategyNolock: '락 없음',
+      strategyForupdate: 'SELECT FOR UPDATE',
+      strategyOptimistic: '낙관적 락',
+      strategyRedis: 'Redis 원자적 처리',
+      campaignCode: '캠페인 코드',
+      newUserId: '새 User ID',
+      claimButton: '쿠폰 받기',
+      syncButton: 'Redis 동기화 (init)',
+      waiting: '요청 대기 중…',
+      remaining: '남음',
+      totalPrefix: '전체',
+      totalSuffix: '개',
+      tallySuccess: '성공',
+      tallySoldOut: '품절',
+      tallyAlready: '이미 발급됨',
+      tallyNotStarted: '시작 전',
+      tallyRateLimited: '요청 제한',
+      liveLog: '실시간 로그',
+      emptyLog: '아직 시도가 없습니다. "쿠폰 받기" 버튼을 눌러 보세요.',
+      footer: '이 페이지는 같은 서버의 FlashDrop API를 직접 호출합니다. 상단 카운터는 이 브라우저 세션의 시도 횟수이며 새로고침하면 초기화됩니다. 남은 수량은 서버에서 실시간으로 읽어옵니다(Redis 전략은 Redis에서).',
+      emptyUserId: 'User ID는 비어 있을 수 없습니다.',
+      requestFailed: '요청 실패: ',
+      checkServer: '서버가 실행 중인지 확인하세요.',
+      synced: 'Redis 캠페인 동기화 완료: {code} (50개)',
+      syncFailed: '동기화 실패: '
+    },
+    en: {
+      claimTitle: 'Claim a coupon',
+      serverUrl: 'Server address',
+      strategy: 'Strategy',
+      strategyNolock: 'No lock',
+      strategyForupdate: 'SELECT FOR UPDATE',
+      strategyOptimistic: 'Optimistic lock',
+      strategyRedis: 'Redis atomic',
+      campaignCode: 'Campaign code',
+      newUserId: 'New user ID',
+      claimButton: 'Claim coupon',
+      syncButton: 'Sync Redis (init)',
+      waiting: 'waiting for a request…',
+      remaining: 'remaining',
+      totalPrefix: 'of',
+      totalSuffix: ' total',
+      tallySuccess: 'Success',
+      tallySoldOut: 'Sold out',
+      tallyAlready: 'Already claimed',
+      tallyNotStarted: 'Not started',
+      tallyRateLimited: 'Rate limited',
+      liveLog: 'Live log',
+      emptyLog: 'No attempts yet — press "Claim coupon".',
+      footer: 'This page calls the FlashDrop API on the same server. The counters above count attempts in this browser session and reset on refresh; the remaining quantity is read live from the server (from Redis for the Redis strategy).',
+      emptyUserId: 'User ID cannot be empty.',
+      requestFailed: 'Request failed: ',
+      checkServer: 'Check that the server is running.',
+      synced: 'Redis campaign synced: {code} (50 coupons)',
+      syncFailed: 'Sync failed: '
+    },
+    uz: {
+      claimTitle: 'Kupon olish',
+      serverUrl: 'Server manzili',
+      strategy: 'Strategiya',
+      strategyNolock: 'Locksiz',
+      strategyForupdate: 'SELECT FOR UPDATE',
+      strategyOptimistic: 'Optimistic lock',
+      strategyRedis: 'Redis atomik',
+      campaignCode: 'Kampaniya kodi',
+      newUserId: 'Yangi user ID',
+      claimButton: 'Kupon olish',
+      syncButton: "Redis'ni sinxronlash (init)",
+      waiting: "so'rov kutilmoqda…",
+      remaining: 'qolgan',
+      totalPrefix: 'jami',
+      totalSuffix: ' tadan',
+      tallySuccess: 'Muvaffaqiyatli',
+      tallySoldOut: 'Tugadi',
+      tallyAlready: 'Allaqachon olingan',
+      tallyNotStarted: 'Boshlanmagan',
+      tallyRateLimited: 'Cheklangan',
+      liveLog: 'Jonli log',
+      emptyLog: 'Hali urinish yo\'q — "Kupon olish" tugmasini bosing.',
+      footer: "Bu sahifa shu serverdagi FlashDrop API'ga to'g'ridan-to'g'ri murojaat qiladi. Tepadagi hisoblagichlar shu brauzer sessiyasidagi urinishlar — sahifani yangilasangiz nolga tushadi; qolgan miqdor esa serverdan (Redis strategiyasida Redis'dan) jonli o'qiladi.",
+      emptyUserId: "User ID bo'sh bo'lishi mumkin emas",
+      requestFailed: "So'rov muvaffaqiyatsiz: ",
+      checkServer: 'Server ishlab turganini tekshiring.',
+      synced: 'Redis kampaniyasi sinxronlandi: {code} (50 dona)',
+      syncFailed: 'Sync muvaffaqiyatsiz: '
+    }
   };
+
+  const LOCALES = { ko: 'ko-KR', en: 'en-US', uz: 'uz-UZ' };
+  const STRATEGY_KEY = {
+    nolock: 'strategyNolock',
+    forupdate: 'strategyForupdate',
+    optimistic: 'strategyOptimistic',
+    redis: 'strategyRedis'
+  };
+
+  let lang = 'ko';
+
+  function t(key) {
+    return I18N[lang][key];
+  }
 
   const els = {
     baseUrl: document.getElementById('baseUrl'),
@@ -463,6 +601,28 @@
     els.baseUrl.value = location.origin;
   }
 
+  function applyLanguage(next) {
+    lang = I18N[next] ? next : 'ko';
+    document.documentElement.lang = lang;
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      el.textContent = t(el.dataset.i18n);
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+      el.title = t(el.dataset.i18nTitle);
+    });
+    document.querySelectorAll('.lang-switch button').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.lang === lang);
+    });
+    updatePill();
+    try {
+      localStorage.setItem('flashdrop.lang', lang);
+    } catch (e) {}
+  }
+
+  document.querySelectorAll('.lang-switch button').forEach((btn) => {
+    btn.addEventListener('click', () => applyLanguage(btn.dataset.lang));
+  });
+
   const counts = { SUCCESS: 0, SOLD_OUT: 0, ALREADY_CLAIMED: 0, CAMPAIGN_NOT_STARTED: 0, RATE_LIMITED: 0 };
   let statusTimer = null;
   let lastRemaining = null;
@@ -477,7 +637,7 @@
 
   function updatePill() {
     els.pillCode.textContent = els.campaignCode.value || '—';
-    els.pillStrategy.textContent = STRATEGY_LABEL[els.strategy.value];
+    els.pillStrategy.textContent = t(STRATEGY_KEY[els.strategy.value]);
   }
 
   function onStrategyChange() {
@@ -502,7 +662,7 @@
 
     const row = document.createElement('div');
     row.className = 'ticker-row';
-    const time = new Date().toLocaleTimeString('uz-UZ', { hour12: false });
+    const time = new Date().toLocaleTimeString(LOCALES[lang], { hour12: false });
     row.innerHTML =
       '<span class="time">' + time + '</span>' +
       '<span class="who">' + userId + '</span>' +
@@ -515,9 +675,10 @@
   }
 
   async function claim() {
+    els.responseBox.removeAttribute('data-i18n');
     const userId = els.userId.value.trim();
     if (!userId) {
-      els.responseBox.textContent = 'User ID bo\'sh bo\'lishi mumkin emas';
+      els.responseBox.textContent = t('emptyUserId');
       els.responseBox.className = 'response-box bad';
       return;
     }
@@ -546,7 +707,7 @@
         prependTicker('ERROR', userId);
       }
     } catch (err) {
-      els.responseBox.textContent = 'So\'rov muvaffaqiyatsiz: ' + err.message + '\n\nServer ishlab turganini va CORS sozlamalarini tekshiring.';
+      els.responseBox.textContent = t('requestFailed') + err.message + '\n\n' + t('checkServer');
       els.responseBox.className = 'response-box bad';
       prependTicker('ERROR', userId);
     } finally {
@@ -556,6 +717,7 @@
   }
 
   async function syncRedis() {
+    els.responseBox.removeAttribute('data-i18n');
     els.syncBtn.disabled = true;
     const url = els.baseUrl.value.replace(/\/$/, '') + '/api/v1/redis/campaigns';
     const startsAt = new Date(Date.now() - 60000).toISOString().slice(0, 19);
@@ -565,10 +727,10 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: els.campaignCode.value, totalQuantity: 50, startsAt: startsAt })
       });
-      els.responseBox.textContent = 'Redis kampaniyasi sinxronlandi: ' + els.campaignCode.value + ' (50 dona)';
+      els.responseBox.textContent = t('synced').replace('{code}', els.campaignCode.value);
       els.responseBox.className = 'response-box ok';
     } catch (err) {
-      els.responseBox.textContent = 'Sync muvaffaqiyatsiz: ' + err.message;
+      els.responseBox.textContent = t('syncFailed') + err.message;
       els.responseBox.className = 'response-box bad';
     } finally {
       els.syncBtn.disabled = false;
@@ -615,7 +777,11 @@
   els.baseUrl.addEventListener('change', restartStatusPolling);
 
   els.userId.value = randomUserId();
-  updatePill();
+  let savedLang = null;
+  try {
+    savedLang = localStorage.getItem('flashdrop.lang');
+  } catch (e) {}
+  applyLanguage(savedLang || 'ko');
   restartStatusPolling();
 </script>
 </body>
