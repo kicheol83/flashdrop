@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
 <title>FlashDrop — jonli konsol</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -457,6 +458,10 @@
     cNotStarted: document.getElementById('cNotStarted'),
     cRateLimited: document.getElementById('cRateLimited')
   };
+
+  if (location.protocol !== 'file:') {
+    els.baseUrl.value = location.origin;
+  }
 
   const counts = { SUCCESS: 0, SOLD_OUT: 0, ALREADY_CLAIMED: 0, CAMPAIGN_NOT_STARTED: 0, RATE_LIMITED: 0 };
   let statusTimer = null;
