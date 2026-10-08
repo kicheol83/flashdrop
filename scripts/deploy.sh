@@ -5,7 +5,13 @@ cd "$(dirname "$0")/.."
 COMPOSE=(docker compose -f docker-compose.prod.yml)
 HISTORY=.deploy-history
 
-git pull --ff-only
+git fetch --quiet
+if git grep -qE '^(<<<<<<<|>>>>>>>)( |$)' '@{u}' -- .; then
+  echo "merge conflict markers found in upstream, deploy aborted" >&2
+  git grep -lE '^(<<<<<<<|>>>>>>>)( |$)' '@{u}' -- . >&2
+  exit 1
+fi
+git merge --ff-only '@{u}'
 sha="$(git rev-parse --short HEAD)"
 
 "${COMPOSE[@]}" build app
