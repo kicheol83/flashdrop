@@ -4,18 +4,31 @@
 
 ## 4 ta yondashuv — barchasi tayyor
 
+<<<<<<< HEAD
 | #   | Strategiya                                 | Endpoint                                         | Fayllar               |
 | --- | ------------------------------------------ | ------------------------------------------------ | --------------------- |
 | 1   | Locksiz (ataylab buzuq — oversell bo'ladi) | `POST /api/v1/nolock/campaigns/{code}/claim`     | `strategy.nolock`     |
 | 2   | `SELECT ... FOR UPDATE`                    | `POST /api/v1/forupdate/campaigns/{code}/claim`  | `strategy.forupdate`  |
 | 3   | Optimistic lock (`@Version` + retry)       | `POST /api/v1/optimistic/campaigns/{code}/claim` | `strategy.optimistic` |
 | 4   | Redis atomik dekrement + async yozuv       | `POST /api/v1/redis/campaigns/{code}/claim`      | `strategy.redis`      |
+=======
+| # | Strategiya | Endpoint | Fayllar |
+|---|---|---|---|
+| 1 | Locksiz (ataylab buzuq — oversell bo'ladi) | `POST /api/v1/nolock/campaigns/{code}/claim` | `strategy.nolock` |
+| 2 | `SELECT ... FOR UPDATE` | `POST /api/v1/forupdate/campaigns/{code}/claim` | `strategy.forupdate` |
+| 3 | Optimistic lock (`@Version` + retry) | `POST /api/v1/optimistic/campaigns/{code}/claim` | `strategy.optimistic` |
+| 4 | Redis atomik dekrement + async yozuv | `POST /api/v1/redis/campaigns/{code}/claim` | `strategy.redis` |
+>>>>>>> 96a097ac82d44c6cc4a300e9a67cf088322765c0
 
 Har biri o'z jadvali, o'z entity'lari va o'z endpoint'i bilan izolyatsiyalangan — shunda k6 natijalari bir-biriga aralashmaydi.
 
 ## Har bir strategiya qanday ishlaydi
 
+<<<<<<< HEAD
 **1 — Locksiz.** `findByCode` → `remainingQuantity` o'qiladi → tekshiriladi → 1 ga kamaytirilib saqlanadi. `@Transactional` yo'q, lock yo'q. Ikki request bir xil qiymatni o'qib, ikkalasi ham "bor" deb qaror qiladi — klassik _lost update_. Test buni `successCount > 50` yoki `remaining_quantity < 0` orqali ko'rsatadi.
+=======
+**1 — Locksiz.** `findByCode` → `remainingQuantity` o'qiladi → tekshiriladi → 1 ga kamaytirilib saqlanadi. `@Transactional` yo'q, lock yo'q. Ikki request bir xil qiymatni o'qib, ikkalasi ham "bor" deb qaror qiladi — klassik *lost update*. Test buni `successCount > 50` yoki `remaining_quantity < 0` orqali ko'rsatadi.
+>>>>>>> 96a097ac82d44c6cc4a300e9a67cf088322765c0
 
 **2 — SELECT FOR UPDATE.** `@Transactional` + `@Lock(PESSIMISTIC_WRITE)` bilan qatorni o'qiganda darhol lock qo'yiladi; boshqa tranzaksiyalar shu qatorga navbatga turadi. To'g'ri, lekin yuk ostida lock kutish (contention) throughput'ni pasaytiradi — buni k6 raqamlarida ko'rasiz.
 
@@ -94,7 +107,11 @@ Ishlashini ko'rish uchun:
 k6 run k6/rate-limit-check.js
 ```
 
+<<<<<<< HEAD
 Bitta userId bilan 0.2s oraliq bilan 12 marta (taxminan 2.4s) so'raydi. Bucket 5 ta token bilan boshlanadi va greedy refill tufayli har 2 soniyada 1 tadan qayta to'ladi, shuning uchun test davomida yana bitta token qo'shiladi. O'lchangan natija: **6 tasi o'tadi, 6 tasi `429`**. Har bir urinish natijasi konsolga (`console.log`) chiqadi.
+=======
+Bitta userId bilan 12 marta ketma-ket so'raydi (0.2s oraliq bilan) — birinchi 5 tasi o'tadi, qolgan 7 tasi `429` bilan qaytishi kerak. Har bir urinish natijasi konsolga (`console.log`) chiqadi.
+>>>>>>> 96a097ac82d44c6cc4a300e9a67cf088322765c0
 
 ## k6 bilan yuklama testi
 
@@ -107,6 +124,7 @@ k6 run k6/redis.js
 
 Har biri 300 VU, 300 iteratsiya bilan `FLASH50` (yoki `FLASH50-REDIS`) kampaniyasiga hujum qiladi. `redis.js` o'zi `setup()` orqali kampaniyani yaratadi va sinxronlaydi — boshqalari uchun avval yuqoridagi seed skriptini ishga tushiring.
 
+<<<<<<< HEAD
 Butun taqqoslashni bir martada takrorlash uchun (server ishlab turgan, brauzer konsoli yopiq holatda):
 
 ```powershell
@@ -137,12 +155,30 @@ O'lchash usuli: `scripts/bench.ps1` bilan har strategiya uchun 1 ta qizdirish ru
 **Oldingi o'lchovdan farqi:** README'ning oldingi versiyasida locksiz usul va optimistic lock eng sekin chiqqan edi. U jadval qizdirishsiz, bitta run natijasidan olingan, ehtimol JIT va connection pool hali tayyor bo'lmagan holatni aks ettirgan, shuning uchun yuqoridagi usul bilan qayta o'lchandi.
 
 **O'lchash paytida topilgan muammo:** 20 ta urinishdan 4 tasida 84–85 ta so'rov TCP darajasida rad etildi (`connection refused`). Rad etilganlar soni har safar deyarli bir xil bo'lgani uchun bu tasodifiy tarmoq xatosi emas, balki OS'ning listen backlog'i to'lib qolgani (OS cheklovi Tomcat'dagi `accept-count: 500` dan past). Bunday run'larda muvaffaqiyatli + sold out yig'indisi 300 dan kam bo'lib, natija haqiqatdan tezroq ko'rinadi, shuning uchun `bench.ps1` ularni avtomatik yaroqsiz deb belgilab, qayta ishga tushiradi. Yaroqsiz run'lar ham `results.csv` da qayd sifatida saqlanadi.
+=======
+## Natijalar (k6, 300 parallel so'rov, 50 dona kupon, Windows/Docker Desktop lokal muhit)
+
+| Strategiya | Throughput | avg latency | p95 latency | Muvaffaqiyatli / Sold out | Oversell bormi? |
+|---|---|---|---|---|---|
+| Locksiz | 80.4 req/s | 2.89s | 3.58s | 300 / 0 (hammasi "SUCCESS"!) | **HA — 6x oversell (300 ta 50 o'rniga)** |
+| SELECT FOR UPDATE | 156.4 req/s | 1.06s | 1.74s | 50 / 250 | Yo'q |
+| Optimistic lock | 114.1 req/s | 2.2s | 2.53s | 50 / 250 | Yo'q |
+| Redis atomik | 240.8 req/s | 390ms | 582ms | 50 / 250 | Yo'q |
+
+**Locksiz nega eng sekin va eng past throughput'ga ega, garchi "lock yo'q" bo'lsa ham?** Chunki u qachon to'xtashni bilmaydi — 300 ta so'rovning barchasi to'liq yozish ishini (UPDATE + INSERT) bajaradi, hech biri arzon "SOLD_OUT" bilan erta chiqib ketmaydi. Qolgan uch strategiya 50 tadan keyin qolgan 250 tasini deyarli bepul rad etadi — shu farq throughput'ni ham, latency'ni ham belgilaydi.
+
+**Qolgan uchtasini xolis solishtirish** (har biri xuddi 50 yozish + 250 arzon rad bajardi):
+- **Redis eng tez** — Lua skript butunlay Redis xotirasida ishlaydi, Postgres'ga hot path'da umuman murojaat qilinmaydi (yozish `@Async` bilan fonda).
+- **SELECT FOR UPDATE ikkinchi** — lock kutish bor, lekin toza, bitta navbat, retry yo'q.
+- **Optimistic lock eng sekin uchdan** — 300 ta thread bir xil qatorga bir vaqtda hujum qilganda ko'p to'qnashuv yuz beradi, har bir muvaffaqiyatsiz urinish qayta boshidan bazaga borishni talab qiladi (retry storm). Bu — optimistic lock'ning past raqobatda tez, yuqori raqobatda esa pessimistic lock'dan ham sekin bo'lishi mumkinligining klassik namunasi.
+>>>>>>> 96a097ac82d44c6cc4a300e9a67cf088322765c0
 
 ## Frontend — jonli konsol
 
 `frontend/index.html` — bitta mustaqil HTML fayl (build kerak emas, hech qanday dependency yo'q). Ikki ustunli: chapda kupon olish paneli (strategiya tanlash, kampaniya kodi, user ID, "Kupon olish" tugmasi), o'ngda jonli taxta (qolgan miqdor — katta raqam, serverdan har 1.2 soniyada o'qiladi; SUCCESS/SOLD_OUT/ALREADY_CLAIMED/CAMPAIGN_NOT_STARTED/RATE_LIMITED bo'yicha shu sessiyadagi hisoblagichlar; oxirgi 60 ta urinishning jonli logi).
 
 Ishga tushirish:
+<<<<<<< HEAD
 
 ```powershell
 .\gradlew.bat bootRun
@@ -152,6 +188,14 @@ keyin `frontend\index.html` faylini brauzerda oching (fayl tizimidan to'g'ridan-
 
 Buning uchun backend'ga ikkita narsa qo'shildi:
 
+=======
+```powershell
+.\gradlew.bat bootRun
+```
+keyin `frontend\index.html` faylini brauzerda oching (fayl tizimidan to'g'ridan-to'g'ri, alohida server shart emas). "Server manzili" maydoni standart `http://localhost:8080` — boshqa portda ishlatsangiz shu yerda o'zgartiring.
+
+Buning uchun backend'ga ikkita narsa qo'shildi:
+>>>>>>> 96a097ac82d44c6cc4a300e9a67cf088322765c0
 - **`GET /api/v1/{strategy}/campaigns/{code}`** — har bir strategiya uchun (jami 4 ta), qolgan/jami miqdorni qaytaradi. Redis strategiyasida bu Postgres'dan emas, to'g'ridan-to'g'ri Redis'dagi jonli `stock` kalitidan o'qiydi — chunki productionda ham "haqiqat manbai" shu.
 - **CORS** (`com.flashdrop.web.CorsConfig`) — `/api/**` uchun ochiq, chunki frontend fayl sifatida (`file://`) yoki boshqa portdan ochiladi, brauzer standart holatda buni bloklaydi. Faqat lokal demo uchun — productionda aniq origin'lar ro'yxati kerak bo'lardi.
 

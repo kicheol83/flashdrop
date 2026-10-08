@@ -8,18 +8,31 @@
 
 ## Four approaches
 
+<<<<<<< HEAD
 | #   | Strategy                                 | Endpoint                                         | Package               |
 | --- | ---------------------------------------- | ------------------------------------------------ | --------------------- |
 | 1   | No lock (deliberately broken, oversells) | `POST /api/v1/nolock/campaigns/{code}/claim`     | `strategy.nolock`     |
 | 2   | `SELECT ... FOR UPDATE`                  | `POST /api/v1/forupdate/campaigns/{code}/claim`  | `strategy.forupdate`  |
 | 3   | Optimistic lock (`@Version` + retry)     | `POST /api/v1/optimistic/campaigns/{code}/claim` | `strategy.optimistic` |
 | 4   | Redis atomic decrement + async write     | `POST /api/v1/redis/campaigns/{code}/claim`      | `strategy.redis`      |
+=======
+| # | Strategy | Endpoint | Package |
+|---|---|---|---|
+| 1 | No lock (deliberately broken, oversells) | `POST /api/v1/nolock/campaigns/{code}/claim` | `strategy.nolock` |
+| 2 | `SELECT ... FOR UPDATE` | `POST /api/v1/forupdate/campaigns/{code}/claim` | `strategy.forupdate` |
+| 3 | Optimistic lock (`@Version` + retry) | `POST /api/v1/optimistic/campaigns/{code}/claim` | `strategy.optimistic` |
+| 4 | Redis atomic decrement + async write | `POST /api/v1/redis/campaigns/{code}/claim` | `strategy.redis` |
+>>>>>>> 96a097ac82d44c6cc4a300e9a67cf088322765c0
 
 Each strategy is isolated with its own tables, entities and endpoint, so k6 results never mix.
 
 ## How each strategy works
 
+<<<<<<< HEAD
 **1 — No lock.** `findByCode` → read `remainingQuantity` → check → decrement by one and save. No `@Transactional`, no lock. Two requests read the same value and both decide "in stock" — the classic _lost update_. The test proves it with `successCount > 50` or `remaining_quantity < 0`.
+=======
+**1 — No lock.** `findByCode` → read `remainingQuantity` → check → decrement by one and save. No `@Transactional`, no lock. Two requests read the same value and both decide "in stock" — the classic *lost update*. The test proves it with `successCount > 50` or `remaining_quantity < 0`.
+>>>>>>> 96a097ac82d44c6cc4a300e9a67cf088322765c0
 
 **2 — SELECT FOR UPDATE.** `@Transactional` + `@Lock(PESSIMISTIC_WRITE)` locks the row as soon as it is read; other transactions queue on that row. Correct, but under load the lock contention lowers throughput, which shows up in the k6 numbers.
 
@@ -90,7 +103,11 @@ To see it work:
 k6 run k6/rate-limit-check.js
 ```
 
+<<<<<<< HEAD
 It sends 12 requests with one `userId`, 0.2 s apart (about 2.4 s). The bucket starts with 5 tokens and refills greedily, one token every 2 seconds, so one more token appears during the run. The measured result is **6 pass, 6 return `429`**.
+=======
+It sends 12 requests with one `userId`, 0.2 s apart — the first 5 pass and the remaining 7 should return `429`.
+>>>>>>> 96a097ac82d44c6cc4a300e9a67cf088322765c0
 
 ## Load testing with k6
 
@@ -103,6 +120,7 @@ k6 run k6/redis.js
 
 Each runs 300 VUs and 300 iterations against the `FLASH50` (or `FLASH50-REDIS`) campaign. `redis.js` creates and syncs its campaign in `setup()`; for the others, run the seed script above first.
 
+<<<<<<< HEAD
 To reproduce the whole comparison in one go (server running, browser console closed):
 
 ```powershell
@@ -133,6 +151,23 @@ Method: **median** of 3 runs per strategy via `scripts/bench.ps1`, after 1 disca
 **Difference from the earlier measurement:** a previous version of this README showed no lock and optimistic locking as the slowest. That table came from single runs without warm-up, which likely reflected a cold JIT and connection pool, so the results were re-measured with the method above.
 
 **A problem found while measuring:** in 4 of 20 attempts, 84–85 requests were refused at the TCP level (`connection refused`). Because the count was almost identical every time, this is not random network noise but the OS listen backlog filling up (the OS limit is lower than Tomcat's `accept-count: 500`). Such runs end with success + sold out below 300 and look faster than they really are, so `bench.ps1` marks them invalid and re-runs them automatically. The invalid runs are kept in `results.csv` as a record.
+=======
+## Results (k6, 300 concurrent requests, 50 coupons, local Windows/Docker Desktop)
+
+| Strategy | Throughput | avg latency | p95 latency | Success / Sold out | Oversell? |
+|---|---|---|---|---|---|
+| No lock | 80.4 req/s | 2.89s | 3.58s | 300 / 0 (all "SUCCESS"!) | **YES — 6x oversell (300 instead of 50)** |
+| SELECT FOR UPDATE | 156.4 req/s | 1.06s | 1.74s | 50 / 250 | No |
+| Optimistic lock | 114.1 req/s | 2.2s | 2.53s | 50 / 250 | No |
+| Redis atomic | 240.8 req/s | 390ms | 582ms | 50 / 250 | No |
+
+**Why is the no-lock strategy the slowest, with the lowest throughput, despite having "no lock"?** Because it never knows when to stop — all 300 requests perform the full write (UPDATE + INSERT), and none exits early with a cheap "SOLD_OUT". The other three reject the remaining 250 almost for free after the first 50, and that difference drives both throughput and latency.
+
+**A fair comparison of the other three** (each did exactly 50 writes + 250 cheap rejections):
+- **Redis is fastest** — the Lua script runs entirely in Redis memory, and the hot path never touches Postgres (the write is `@Async` in the background).
+- **SELECT FOR UPDATE is second** — there is lock waiting, but it is a clean single queue with no retries.
+- **Optimistic lock is the slowest of the three** — when 300 threads hit the same row at once, conflicts are frequent and every failed attempt must go back to the database from scratch (a retry storm). It is the classic example of optimistic locking being fast under low contention and slower than pessimistic locking under high contention.
+>>>>>>> 96a097ac82d44c6cc4a300e9a67cf088322765c0
 
 ## Frontend — live console
 
@@ -141,7 +176,10 @@ Method: **median** of 3 runs per strategy via `scripts/bench.ps1`, after 1 disca
 In production the page and the API are served from the same domain, so the "server address" field is set to the current origin automatically. Locally, opening the file directly in a browser uses the default `http://localhost:8080`.
 
 Two things were added to the backend for it:
+<<<<<<< HEAD
 
+=======
+>>>>>>> 96a097ac82d44c6cc4a300e9a67cf088322765c0
 - **`GET /api/v1/{strategy}/campaigns/{code}`** — one per strategy (four in total), returning remaining/total quantity. For the Redis strategy it reads the live `stock` key from Redis rather than Postgres.
 - **CORS** (`com.flashdrop.web.CorsConfig`) — open for `/api/**` so the file can be opened locally via `file://`.
 

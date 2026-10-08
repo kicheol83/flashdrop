@@ -1,0 +1,21 @@
+{
+	auto_https off
+	admin off
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+:80 {
+	encode zstd gzip
+
+	@api path /api/*
+	handle @api {
+		reverse_proxy app:8080
+	}
+
+	handle {
+		root * /srv
+		file_server
+	}
+}

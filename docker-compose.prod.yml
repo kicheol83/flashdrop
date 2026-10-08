@@ -1,0 +1,100 @@
+name: flashdrop
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: flashdrop
+      POSTGRES_USER: flashdrop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    command: ['postgres', '-c', 'shared_preload_libraries=pg_stat_statements', '-c', 'max_connections=100']
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U flashdrop -d flashdrop']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      internal: {}
+      monitoring:
+        aliases:
+          - flashdrop-db
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks:
+      - internal
+
+  app:
+    build: .
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/flashdrop
+      SPRING_DATASOURCE_USERNAME: flashdrop
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: '6379'
+      SERVER_FORWARD_HEADERS_STRATEGY: native
+      JAVA_OPTS: -XX:MaxRAMPercentage=75
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+
+  seed:
+    image: postgres:17-alpine
+    restart: 'no'
+    entrypoint: ['sh', '/seed/reset-demo.sh']
+    environment:
+      PGHOST: postgres
+      PGUSER: flashdrop
+      PGDATABASE: flashdrop
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - ./docker/seed/reset-demo.sh:/seed/reset-demo.sh:ro
+      - ./scripts/seed-demo-campaigns.sql:/seed/seed-demo-campaigns.sql:ro
+    depends_on:
+      - app
+    networks:
+      - internal
+
+  web:
+    image: caddy:2-alpine
+    container_name: flashdrop-web
+    restart: unless-stopped
+    volumes:
+      - ./docker/web/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./frontend:/srv:ro
+    depends_on:
+      - app
+    networks:
+      - internal
+      - proxy
+
+networks:
+  internal: {}
+  proxy:
+    external: true
+    name: proxy
+  monitoring:
+    external: true
+    name: monitoring
+
+volumes:
+  pg_data:
+  redis_data:
