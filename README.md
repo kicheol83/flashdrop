@@ -5,38 +5,6 @@
 쿠폰 50장, 동시 요청 수백 건, 그리고 단 한 장도 초과 발급되어서는 안 된다는 조건. 같은 비즈니스 규칙을 4가지 동시성 제어 전략으로 구현하고 k6로 비교하는 프로젝트입니다.
 
 **Live Demo:** https://flashdrop.javohir.dev
-<<<<<<< HEAD
-
-## 4가지 접근 방식
-
-| #   | 전략                                             | Endpoint                                         | 패키지                |
-| --- | ------------------------------------------------ | ------------------------------------------------ | --------------------- |
-| 1   | 락 없음 (의도적으로 잘못된 구현, 초과 발급 발생) | `POST /api/v1/nolock/campaigns/{code}/claim`     | `strategy.nolock`     |
-| 2   | `SELECT ... FOR UPDATE`                          | `POST /api/v1/forupdate/campaigns/{code}/claim`  | `strategy.forupdate`  |
-| 3   | 낙관적 락 (`@Version` + 재시도)                  | `POST /api/v1/optimistic/campaigns/{code}/claim` | `strategy.optimistic` |
-| 4   | Redis 원자적 차감 + 비동기 저장                  | `POST /api/v1/redis/campaigns/{code}/claim`      | `strategy.redis`      |
-
-각 전략은 자체 테이블, 엔티티, 엔드포인트로 완전히 분리되어 있어 k6 결과가 서로 섞이지 않습니다.
-
-## 전략별 동작 방식
-
-**1 — 락 없음.** `findByCode`로 `remainingQuantity`를 읽고, 확인한 뒤, 1을 줄여 저장합니다. `@Transactional`도 락도 없습니다. 두 요청이 같은 값을 읽고 둘 다 "재고 있음"으로 판단하는 전형적인 _lost update_ 문제입니다. 테스트는 `successCount > 50` 또는 `remaining_quantity < 0`으로 이를 증명합니다.
-
-**2 — SELECT FOR UPDATE.** `@Transactional` + `@Lock(PESSIMISTIC_WRITE)`로 행을 읽는 즉시 락을 걸고, 다른 트랜잭션은 해당 행에서 대기합니다. 정확하지만, 부하가 높을수록 락 대기(contention)로 처리량이 떨어지며 이는 k6 수치에서 확인할 수 있습니다.
-
-**3 — 낙관적 락.** 아무것도 잠그지 않고, `version` 컬럼으로 "내가 읽은 이후 변경되지 않았는지"만 확인합니다. 충돌 시 `ObjectOptimisticLockingFailureException`이 발생하고 재시도합니다(`OptimisticClaimService`, 최대 20회). 핵심 포인트: 재시도 로직과 트랜잭션 로직을 의도적으로 두 개의 빈으로 분리했습니다(`OptimisticClaimService` → `OptimisticClaimAttempt`). Spring의 `@Transactional` 프록시는 **self-invocation**(같은 빈 안에서 메서드가 다른 메서드를 호출하는 경우)을 가로채지 못하므로, 한 클래스에 모두 넣으면 트랜잭션이 실제로는 적용되지 않습니다.
-
-**4 — Redis.** 재고는 Redis(`DECR`)에, 중복 방지도 Redis(`SADD`로 발급받은 사용자 집합 관리)에 있으며, 둘 다 하나의 Lua 스크립트(`claim.lua`) 안에서 원자적으로 실행되므로 check-then-act 문제가 원천적으로 없습니다. Postgres 저장은 `@Async`로 백그라운드에서 수행되어(`RedisClaimWriteBackService`) 응답은 즉시 반환되고 DB 기록은 뒤따라옵니다. 대가도 있습니다. Redis 처리 후 DB 저장 전에 애플리케이션이 죽으면, Redis에서는 발급된 쿠폰이 Postgres에는 없을 수 있습니다.
-
-모든 전략은 `CAMPAIGN_NOT_STARTED` / `ALREADY_CLAIMED` / `SOLD_OUT` / `SUCCESS`를 동일한 `ClaimResult`(`common` 패키지)로 반환합니다. 중복 발급 방지는 모든 전략에서 보장됩니다. 1–3번은 DB 레벨의 `UNIQUE(campaign_id, user_id)`, 4번은 Redis SET과 안전장치로 DB의 unique 제약을 함께 사용합니다.
-
-## 기술 스택
-
-Java 21 (테스트에서 virtual thread 사용) · Spring Boot 3.5 · PostgreSQL 17 · Redis · Flyway · Testcontainers · k6
-
-`application.yml`에서 Tomcat(`accept-count`, `threads.max`)과 HikariCP(`maximum-pool-size: 50`) 설정을 기본값보다 크게 잡았습니다. 기본값(커넥션 10개, 작은 backlog)으로는 동시 요청 300건에서 인위적인 "connection refused"와 대기 지연이 발생한다는 것을 k6 테스트로 확인했습니다.
-
-=======
 
 ## 4가지 접근 방식
 
@@ -67,7 +35,6 @@ Java 21 (테스트에서 virtual thread 사용) · Spring Boot 3.5 · PostgreSQL
 
 `application.yml`에서 Tomcat(`accept-count`, `threads.max`)과 HikariCP(`maximum-pool-size: 50`) 설정을 기본값보다 크게 잡았습니다. 기본값(커넥션 10개, 작은 backlog)으로는 동시 요청 300건에서 인위적인 "connection refused"와 대기 지연이 발생한다는 것을 k6 테스트로 확인했습니다.
 
->>>>>>> 96a097ac82d44c6cc4a300e9a67cf088322765c0
 ## 로컬 실행 (PowerShell)
 
 ```powershell
@@ -123,11 +90,7 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/redis/campaigns
 k6 run k6/rate-limit-check.js
 ```
 
-<<<<<<< HEAD
-하나의 `userId`로 0.2초 간격으로 12번(약 2.4초) 요청합니다. 버킷은 토큰 5개로 시작하고 greedy refill로 2초마다 1개씩 다시 채워지므로, 실행 도중 토큰이 1개 더 생깁니다. 실측 결과는 **6번 통과, 6번 `429`**입니다.
-=======
 하나의 `userId`로 0.2초 간격으로 12번 요청합니다. 처음 5번은 통과하고 나머지 7번은 `429`를 반환해야 합니다.
->>>>>>> 96a097ac82d44c6cc4a300e9a67cf088322765c0
 
 ## k6 부하 테스트
 
@@ -140,66 +103,6 @@ k6 run k6/redis.js
 
 각 스크립트는 300 VU, 300회 반복으로 `FLASH50`(또는 `FLASH50-REDIS`) 캠페인에 요청을 보냅니다. `redis.js`는 `setup()`에서 캠페인을 직접 생성하고, 나머지는 먼저 위의 seed 스크립트를 실행해야 합니다.
 
-<<<<<<< HEAD
-전체 비교를 한 번에 재현하려면 (서버 실행 중, 브라우저 콘솔은 닫은 상태):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\bench.ps1
-```
-
-전략마다 seed → 워밍업 1회 → 측정 3회를 수행하고, 결과를 `docs/evidence/bench/`(`summary.csv`, `results.csv`, 실행별 JSON, `environment.txt`)에 저장합니다.
-
-## 결과 (k6, 동시 요청 300건, 쿠폰 50장, Windows/Docker Desktop 로컬 환경, 2026-10-09)
-
-측정 방법: `scripts/bench.ps1`로 전략마다 워밍업 1회(결과 제외) 후 3회 실행한 **중앙값**입니다. 실패한 요청이 하나라도 있는 실행은 무효로 처리하고 다시 실행했습니다(아래 "측정 중 발견한 문제" 참고).
-
-| 전략              | 처리량    | 평균 지연 | p95 지연 | 성공 / 품절               | 실제 발급 (DB)          |
-| ----------------- | --------- | --------- | -------- | ------------------------- | ----------------------- |
-| 락 없음           | 307 req/s | 531ms     | 867ms    | 300 / 0 (전부 "SUCCESS"!) | **300 — 6배 초과 발급** |
-| SELECT FOR UPDATE | 188 req/s | 880ms     | 1465ms   | 50 / 250                  | 50                      |
-| 낙관적 락         | 331 req/s | 677ms     | 831ms    | 50 / 250                  | 50                      |
-| Redis 원자적 처리 | 873 req/s | 123ms     | 178ms    | 50 / 250                  | 50                      |
-
-**락 없음은 빠르지만 틀립니다.** 락 대기가 없으니 SELECT FOR UPDATE보다 처리량은 높지만, 50장 대신 300장을 발급했습니다. 그런데도 `remaining_quantity`는 0이 아니라 46으로 남았습니다(실측). 모든 요청이 같은 값을 읽고 서로의 쓰기를 덮어쓴 *lost update*입니다. 정합성이 깨진 구현의 속도는 비교 대상이 될 수 없습니다.
-
-**정확한 세 전략의 비교** (모두 쓰기 50건 + 거절 250건 수행):
-
-- **Redis가 가장 빠름** (SELECT FOR UPDATE 대비 처리량 4.6배, p95 8.2배 개선): Lua 스크립트가 Redis 메모리에서 원자적으로 실행되고, hot path에서 Postgres에 전혀 접근하지 않습니다(쓰기는 `@Async`로 백그라운드 처리).
-- **낙관적 락이 SELECT FOR UPDATE보다 빠름** (처리량 1.76배): `findByCodeForUpdate`는 재고를 확인하기 **전에** 행 락을 잡기 때문에, 품절 후 거절될 250건까지 모두 한 줄로 대기합니다. 낙관적 락은 50건의 쓰기 주변에서만 충돌하고, 재고가 0이 된 뒤의 요청은 락 없이 병렬로 읽고 바로 `SOLD_OUT`을 반환합니다.
-- **SELECT FOR UPDATE가 가장 느림:** 정확하지만 거절될 요청까지 모든 요청을 직렬화합니다. 개선 방향: 락을 잡기 전에 일반 SELECT로 품절 여부를 먼저 확인하면, 품절 이후 요청의 락 대기를 없앨 수 있습니다.
-
-**이전 측정과의 차이:** 이 README의 이전 버전에서는 락 없음과 낙관적 락이 가장 느리게 나왔습니다. 당시에는 워밍업 없이 단일 실행 결과를 사용했으므로, JIT와 커넥션 풀이 준비되지 않은 상태가 반영된 것으로 보고 위 방법으로 다시 측정했습니다.
-
-**측정 중 발견한 문제:** 20회 시도 중 4회에서 84–85건의 요청이 TCP 단계에서 거부되었습니다(`connection refused`). 거부 건수가 매번 거의 같다는 점에서 우연한 네트워크 오류가 아니라 OS의 listen backlog가 가득 찬 것으로 판단됩니다(Tomcat `accept-count: 500`보다 OS 제한이 낮음). 이런 실행은 성공/품절 합계가 300보다 작아져 처리량이 실제보다 좋아 보이므로, `bench.ps1`이 자동으로 무효 처리하고 재실행합니다. 무효 실행 기록도 `results.csv`에 남겨 두었습니다.
-
-## 프론트엔드 — 실시간 콘솔
-
-`frontend/index.html`은 빌드도 의존성도 필요 없는 단일 HTML 파일입니다. 두 개의 컬럼으로 구성됩니다. 왼쪽은 쿠폰 발급 패널(전략 선택, 캠페인 코드, user ID, 발급 버튼), 오른쪽은 실시간 보드(서버에서 1.2초마다 읽어오는 남은 수량, 이번 세션의 결과별 카운터, 최근 60건의 실시간 로그)입니다.
-
-운영 환경에서는 페이지와 API가 같은 도메인에서 제공되므로 "서버 주소" 필드가 자동으로 현재 주소로 설정됩니다. 로컬에서는 파일을 브라우저에서 직접 열면 기본값 `http://localhost:8080`을 사용합니다.
-
-이를 위해 백엔드에 두 가지를 추가했습니다.
-
-- **`GET /api/v1/{strategy}/campaigns/{code}`**: 전략별(총 4개)로 남은/전체 수량을 반환합니다. Redis 전략은 Postgres가 아닌 Redis의 실시간 `stock` 키에서 직접 읽습니다.
-- **CORS** (`com.flashdrop.web.CorsConfig`): 로컬에서 파일(`file://`)로 열 때를 위해 `/api/**`에 열려 있습니다.
-
-Redis 전략을 선택하면 "Redis 동기화(init)" 버튼이 추가로 나타나, 페이지에서 바로 캠페인을 생성하거나 초기화할 수 있습니다.
-
-## 운영 배포
-
-```bash
-cp .env.prod.example .env
-docker compose -f docker-compose.prod.yml up -d --build
-```
-
-- `app`: 멀티 스테이지 `Dockerfile`로 빌드된 Spring Boot 애플리케이션. root가 아닌 사용자로 실행되며 메모리는 1GB로 제한됩니다.
-- `web`: Caddy가 `frontend/`를 정적 파일로 제공하고 `/api/*`를 애플리케이션으로 프록시합니다.
-- `seed`: 시작 시 데모 캠페인 4개를 생성합니다. `docker compose -f docker-compose.prod.yml run --rm seed`로 언제든 데모를 초기화할 수 있습니다.
-- Postgres와 Redis 포트는 외부에 노출하지 않으며, `POSTGRES_PASSWORD`는 `openssl rand -hex 24`로 생성합니다.
-
-## 다음 단계
-
-=======
 ## 결과 (k6, 동시 요청 300건, 쿠폰 50장, Windows/Docker Desktop 로컬 환경)
 
 | 전략 | 처리량 | 평균 지연 | p95 지연 | 성공 / 품절 | 초과 발급 |
@@ -242,6 +145,5 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ## 다음 단계
 
->>>>>>> 96a097ac82d44c6cc4a300e9a67cf088322765c0
 - `campaign_redis.remaining_quantity`는 현재 초기화 시에만 기록되고 이후 Redis와 동기화되지 않습니다. Postgres 상태를 최종적으로 맞추는 reconciliation 작업이 필요합니다.
 - 프론트엔드 카운터는 브라우저 세션별로 동작합니다(새로고침 시 초기화). 여러 사람이 동시에 보려면 백엔드에 공용 지표 엔드포인트가 필요합니다.
