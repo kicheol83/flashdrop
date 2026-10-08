@@ -1,0 +1,5 @@
+﻿"strategy","valid_runs","invalid_runs","median_rps","median_avg_ms","median_p95_ms","success","db_issued"
+"nolock","3","1","307.2","531.1","866.5","300","300"
+"forupdate","3","1","187.7","880.1","1465.2","50","50"
+"optimistic","3","2","330.8","676.7","831.2","50","50"
+"redis","3","0","873","123.3","177.7","50","50"

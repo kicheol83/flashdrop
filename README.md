@@ -1,62 +1,60 @@
-# FlashDrop — 선착순 발급 tizimi
+# FlashDrop — 선착순 쿠폰 발급 시스템
 
-10,000 dona kupon, minglab parallel so'rov, bittasi ham ortiqcha berilmasligi kerak. Bir xil biznes qoidasini 4 xil konkurentlik strategiyasi bilan yechib, k6 bilan solishtirish uchun loyiha.
+[English](./README.en.md) | **한국어** | [O'zbekcha](./README.uz.md)
 
-## 4 ta yondashuv — barchasi tayyor
+쿠폰 50장, 동시 요청 수백 건, 그리고 단 한 장도 초과 발급되어서는 안 된다는 조건. 같은 비즈니스 규칙을 4가지 동시성 제어 전략으로 구현하고 k6로 비교하는 프로젝트입니다.
 
-| # | Strategiya | Endpoint | Fayllar |
-|---|---|---|---|
-| 1 | Locksiz (ataylab buzuq — oversell bo'ladi) | `POST /api/v1/nolock/campaigns/{code}/claim` | `strategy.nolock` |
-| 2 | `SELECT ... FOR UPDATE` | `POST /api/v1/forupdate/campaigns/{code}/claim` | `strategy.forupdate` |
-| 3 | Optimistic lock (`@Version` + retry) | `POST /api/v1/optimistic/campaigns/{code}/claim` | `strategy.optimistic` |
-| 4 | Redis atomik dekrement + async yozuv | `POST /api/v1/redis/campaigns/{code}/claim` | `strategy.redis` |
+**Live Demo:** https://flashdrop.javohir.dev
 
-Har biri o'z jadvali, o'z entity'lari va o'z endpoint'i bilan izolyatsiyalangan — shunda k6 natijalari bir-biriga aralashmaydi.
+## 4가지 접근 방식
 
-## Har bir strategiya qanday ishlaydi
+| #   | 전략                                             | Endpoint                                         | 패키지                |
+| --- | ------------------------------------------------ | ------------------------------------------------ | --------------------- |
+| 1   | 락 없음 (의도적으로 잘못된 구현, 초과 발급 발생) | `POST /api/v1/nolock/campaigns/{code}/claim`     | `strategy.nolock`     |
+| 2   | `SELECT ... FOR UPDATE`                          | `POST /api/v1/forupdate/campaigns/{code}/claim`  | `strategy.forupdate`  |
+| 3   | 낙관적 락 (`@Version` + 재시도)                  | `POST /api/v1/optimistic/campaigns/{code}/claim` | `strategy.optimistic` |
+| 4   | Redis 원자적 차감 + 비동기 저장                  | `POST /api/v1/redis/campaigns/{code}/claim`      | `strategy.redis`      |
 
-**1 — Locksiz.** `findByCode` → `remainingQuantity` o'qiladi → tekshiriladi → 1 ga kamaytirilib saqlanadi. `@Transactional` yo'q, lock yo'q. Ikki request bir xil qiymatni o'qib, ikkalasi ham "bor" deb qaror qiladi — klassik *lost update*. Test buni `successCount > 50` yoki `remaining_quantity < 0` orqali ko'rsatadi.
+각 전략은 자체 테이블, 엔티티, 엔드포인트로 완전히 분리되어 있어 k6 결과가 서로 섞이지 않습니다.
 
-**2 — SELECT FOR UPDATE.** `@Transactional` + `@Lock(PESSIMISTIC_WRITE)` bilan qatorni o'qiganda darhol lock qo'yiladi; boshqa tranzaksiyalar shu qatorga navbatga turadi. To'g'ri, lekin yuk ostida lock kutish (contention) throughput'ni pasaytiradi — buni k6 raqamlarida ko'rasiz.
+## 전략별 동작 방식
 
-**3 — Optimistic lock.** Hech narsa lock qilinmaydi, faqat `version` ustuni bilan "men o'qiganimdan beri o'zgarmadimi" tekshiriladi. To'qnashuv bo'lsa `ObjectOptimisticLockingFailureException` otiladi va qayta uriniladi (`OptimisticClaimService`, 20 martagacha retry). Muhim nuqta: retry-transactional logikasi ataylab ikkita bean'ga bo'lingan (`OptimisticClaimService` → `OptimisticClaimAttempt`), chunki Spring'ning `@Transactional` proxy'si **self-invocation**'ni (bitta bean ichida bir metod ikkinchisini chaqirishi) ushlamaydi — shu sababli tranzaksiya haqiqatda ishlamay qoladi, agar hammasi bitta klassda bo'lsa.
+**1 — 락 없음.** `findByCode`로 `remainingQuantity`를 읽고, 확인한 뒤, 1을 줄여 저장합니다. `@Transactional`도 락도 없습니다. 두 요청이 같은 값을 읽고 둘 다 "재고 있음"으로 판단하는 전형적인 _lost update_ 문제입니다. 테스트는 `successCount > 50` 또는 `remaining_quantity < 0`으로 이를 증명합니다.
 
-**4 — Redis.** Stock Redis'da (`DECR`), idempotency ham Redis'da (`SADD` bilan claimed-users set) — ikkalasi bitta Lua skript (`claim.lua`) ichida atomik bajariladi, shu bois check-then-act muammosi umuman yo'q. Postgres'ga yozish esa `@Async` orqali fon rejimida (`RedisClaimWriteBackService`) — response darhol qaytadi, DB yozuvi orqadan yetib keladi. Buning narxi: agar ilova Redis'dan keyin, DB'ga yozishdan oldin qulasa, Redis'da "berilgan" deb hisoblangan kupon Postgres'da yo'q bo'lib qolishi mumkin — bu trade-off'ni solishtirish jadvalida muhokama qiling.
+**2 — SELECT FOR UPDATE.** `@Transactional` + `@Lock(PESSIMISTIC_WRITE)`로 행을 읽는 즉시 락을 걸고, 다른 트랜잭션은 해당 행에서 대기합니다. 정확하지만, 부하가 높을수록 락 대기(contention)로 처리량이 떨어지며 이는 k6 수치에서 확인할 수 있습니다.
 
-Har bir strategiyada `CAMPAIGN_NOT_STARTED` / `ALREADY_CLAIMED` / `SOLD_OUT` / `SUCCESS` bir xil `ClaimResult` (`common` paketi) orqali qaytadi. Idempotency barcha strategiyalarda ta'minlangan: 1–3 da `UNIQUE(campaign_id, user_id)` DB darajasida, 4-da Redis SET + xavfsizlik uchun DB'da ham unique constraint.
+**3 — 낙관적 락.** 아무것도 잠그지 않고, `version` 컬럼으로 "내가 읽은 이후 변경되지 않았는지"만 확인합니다. 충돌 시 `ObjectOptimisticLockingFailureException`이 발생하고 재시도합니다(`OptimisticClaimService`, 최대 20회). 핵심 포인트: 재시도 로직과 트랜잭션 로직을 의도적으로 두 개의 빈으로 분리했습니다(`OptimisticClaimService` → `OptimisticClaimAttempt`). Spring의 `@Transactional` 프록시는 **self-invocation**(같은 빈 안에서 메서드가 다른 메서드를 호출하는 경우)을 가로채지 못하므로, 한 클래스에 모두 넣으면 트랜잭션이 실제로는 적용되지 않습니다.
 
-## Stack
+**4 — Redis.** 재고는 Redis(`DECR`)에, 중복 방지도 Redis(`SADD`로 발급받은 사용자 집합 관리)에 있으며, 둘 다 하나의 Lua 스크립트(`claim.lua`) 안에서 원자적으로 실행되므로 check-then-act 문제가 원천적으로 없습니다. Postgres 저장은 `@Async`로 백그라운드에서 수행되어(`RedisClaimWriteBackService`) 응답은 즉시 반환되고 DB 기록은 뒤따라옵니다. 대가도 있습니다. Redis 처리 후 DB 저장 전에 애플리케이션이 죽으면, Redis에서는 발급된 쿠폰이 Postgres에는 없을 수 있습니다.
 
-Java 21 (virtual thread'lar testlarda ishlatilgan) · Spring Boot 3.5 · PostgreSQL 17 · Redis · Flyway · Testcontainers · k6
+모든 전략은 `CAMPAIGN_NOT_STARTED` / `ALREADY_CLAIMED` / `SOLD_OUT` / `SUCCESS`를 동일한 `ClaimResult`(`common` 패키지)로 반환합니다. 중복 발급 방지는 모든 전략에서 보장됩니다. 1–3번은 DB 레벨의 `UNIQUE(campaign_id, user_id)`, 4번은 Redis SET과 안전장치로 DB의 unique 제약을 함께 사용합니다.
 
-`application.yml`'da Tomcat (`accept-count`, `threads.max`) va HikariCP (`maximum-pool-size: 50`) sozlamalari standartdan kattaroq qilib qo'yilgan — standart (10 connection, kichik backlog) 300 ta bir vaqtdagi so'rov ostida sun'iy "connection refused" va navbat kechikishlarini keltirib chiqargani k6 bilan sinovda aniqlandi.
+## 기술 스택
 
-## Ishga tushirish (PowerShell)
+Java 21 (테스트에서 virtual thread 사용) · Spring Boot 3.5 · PostgreSQL 17 · Redis · Flyway · Testcontainers · k6
+
+`application.yml`에서 Tomcat(`accept-count`, `threads.max`)과 HikariCP(`maximum-pool-size: 50`) 설정을 기본값보다 크게 잡았습니다. 기본값(커넥션 10개, 작은 backlog)으로는 동시 요청 300건에서 인위적인 "connection refused"와 대기 지연이 발생한다는 것을 k6 테스트로 확인했습니다.
+
+## 로컬 실행 (PowerShell)
 
 ```powershell
 docker compose up -d
-```
-
-Gradle wrapper qo'shilmagan (sandbox'da internet cheklovi tufayli generatsiya qila olmadim):
-
-```powershell
-gradle wrapper --gradle-version 8.10
 .\gradlew.bat bootRun
 ```
 
-yoki IntelliJ IDEA'da papkani oching — Gradle avtomatik sinxronlashadi.
+또는 IntelliJ IDEA에서 폴더를 열면 Gradle이 자동으로 동기화됩니다.
 
-## Demo kampaniyalarni yaratish
+## 데모 캠페인 생성
 
-1–3-strategiyalar uchun (Redis o'zining `/api/v1/redis/campaigns` endpoint'i orqali o'zini sinxronlaydi, alohida seed shart emas):
+1–3번 전략용:
 
 ```powershell
 Get-Content scripts/seed-demo-campaigns.sql | docker exec -i flashdrop-postgres-1 psql -U flashdrop -d flashdrop
 ```
 
-(Konteyner nomi `docker ps` bilan tekshiring — `docker compose up -d` odatda `flashdrop-postgres-1` deb nomlaydi.)
+(컨테이너 이름은 `docker ps`로 확인하세요. `docker compose up -d`는 보통 `flashdrop-postgres-1`로 이름을 붙입니다.)
 
-Redis strategiyasi uchun serverni ishga tushirgach:
+Redis 전략은 서버 실행 후:
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/redis/campaigns `
@@ -64,39 +62,37 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/v1/redis/campaigns
   -Body '{"code":"FLASH50-REDIS","totalQuantity":50,"startsAt":"2026-01-01T00:00:00"}'
 ```
 
-## Testlarni ishga tushirish
+## 테스트 실행
 
 ```powershell
 .\gradlew.bat test
 ```
 
-Har bir strategiya o'z Testcontainers-asosidagi konkurentlik testiga ega (`*ConcurrencyTest`), 300 ta virtual thread bir vaqtning o'zida 50 dona kuponga hujum qiladi:
+각 전략에는 Testcontainers 기반 동시성 테스트(`*ConcurrencyTest`)가 있으며, 300개의 virtual thread가 동시에 50장의 쿠폰을 요청합니다.
 
-- `NoLockConcurrencyTest` — **qizil kutiladi**: oversell'ni isbotlaydi (`successCount` 50'dan oshadi yoki `remaining_quantity` manfiyga tushadi)
-- `ForUpdateConcurrencyTest`, `OptimisticConcurrencyTest`, `RedisConcurrencyTest` — **yashil kutiladi**: aniq 50 ta muvaffaqiyatli claim, ortiqcha yo'q
+- `NoLockConcurrencyTest`: **실패가 정상**입니다. 초과 발급을 증명합니다(`successCount`가 50을 넘거나 `remaining_quantity`가 음수가 됨).
+- `ForUpdateConcurrencyTest`, `OptimisticConcurrencyTest`, `RedisConcurrencyTest`: **성공이 정상**입니다. 정확히 50건만 성공하고 초과 발급은 없습니다.
 
-Bu sandbox muhitida (internet cheklovi + Docker yo'qligi tufayli) testlarni haqiqatda ishga tushirib tekshira olmadim — kodni diqqat bilan qo'lda tekshirdim, lekin birinchi marta ishga tushirganingizda natijani menga ayting, kerak bo'lsa birga tuzatamiz.
+## Rate Limiting
 
-## Rate limiting
+4가지 전략의 `/claim` 엔드포인트는 하나의 공통 인터셉터(`com.flashdrop.ratelimit`)로 보호됩니다. `/api/v1/*/campaigns/*/claim` 패턴에 맞는 모든 요청이 이 인터셉터를 거칩니다.
 
-Barcha 4 strategiyaning `/claim` endpoint'i bitta umumiy interceptor orqali himoyalangan (`com.flashdrop.ratelimit`), alohida-alohida yozilmagan — `/api/v1/*/campaigns/*/claim` pattern'iga mos keladigan har qanday so'rov shu orqali o'tadi.
+- **알고리즘:** 토큰 버킷(Bucket4j). 상태는 Redis(Lettuce)에 저장되므로 애플리케이션이 여러 인스턴스로 실행되어도 제한이 공유됩니다.
+- **키:** `userId`. 이 방식은 약합니다. `userId`는 클라이언트가 직접 보내는 값이라 임의로 바꿀 수 있으므로, 운영 환경에서는 IP와 함께 사용해야 합니다.
+- **기본 제한:** `userId`당 10초에 5회 (`application.yml` → `flashdrop.rate-limit.*`).
+- **응답:** 제한 초과 시 200이 아닌 **429 Too Many Requests**를 반환하며, 본문은 `{"status":"RATE_LIMITED","claimId":null}`, 헤더에 `Retry-After`와 `X-Rate-Limit-Remaining`이 포함됩니다. 다른 모든 결과(SUCCESS/SOLD_OUT 등)가 200을 반환하는 것과 의도적으로 구분했습니다. 이는 비즈니스 결과가 아니라 HTTP 수준의 거절이기 때문입니다.
+- **Redis 연결은 `@Lazy`:** `RateLimitConfig`의 빈은 컨텍스트 시작 시가 아니라 첫 번째 실제 HTTP 요청 시 연결됩니다. 그래서 서비스를 직접 호출하는 기존 `*ConcurrencyTest`들은 Redis 없이도 동작합니다.
+- **300 VU k6 테스트가 영향받지 않는 이유:** 각 VU가 서로 다른 `userId`(`k6-user-{VU}-{ITER}`)로 한 번씩만 요청하기 때문입니다. 제한은 **같은** `userId`의 반복 요청만 막습니다.
 
-- **Algoritm:** token bucket (Bucket4j), holat Redis'da saqlanadi (Lettuce orqali) — shuning uchun ilova bir nechta nusxada ishlasa ham limit umumiy bo'ladi.
-- **Kalit:** `userId` (loyihada allaqachon shu identifikator ishlatiladi). Bu himoya kuchsiz — userId o'zi e'lon qilingani uchun istalgan qiymatga o'zgartirilishi mumkin; productionda IP bilan birga ishlatiladi.
-- **Standart limit:** 10 soniyada 5 ta so'rov, bitta userId uchun (`application.yml` → `flashdrop.rate-limit.*`).
-- **Javob:** limitdan oshganda 200 emas, **429 Too Many Requests**, tanasi `{"status":"RATE_LIMITED","claimId":null}`, sarlavhada `Retry-After` va `X-Rate-Limit-Remaining`. Bu — boshqa barcha holatlar (SUCCESS/SOLD_OUT/...) 200 qaytarishidan ataylab qilingan farq: bu biznes natijasi emas, haqiqiy HTTP darajasidagi rad javobi.
-- **Redis ulanishi `@Lazy`** — `RateLimitConfig`dagi bean context ishga tushganda emas, birinchi HAQIQIY HTTP so'rov kelganda ulanadi. Shuning uchun mavjud `*ConcurrencyTest`lar (ular service'larni to'g'ridan-to'g'ri chaqiradi, HTTP orqali emas) buzilmaydi — Redis kerak bo'lmaydi, chunki interceptor umuman ishga tushmaydi.
-- **300 VU'lik k6 testlaringiz nega buzilmaydi:** har biri boshqa-boshqa `userId` ishlatadi (`k6-user-{VU}-{ITER}`), har biri atigi bir marta so'raydi — limit esa faqat **bitta** userId qayta-qayta urinishini ushlaydi.
-
-Ishlashini ko'rish uchun:
+확인 방법:
 
 ```powershell
 k6 run k6/rate-limit-check.js
 ```
 
-Bitta userId bilan 12 marta ketma-ket so'raydi (0.2s oraliq bilan) — birinchi 5 tasi o'tadi, qolgan 7 tasi `429` bilan qaytishi kerak. Har bir urinish natijasi konsolga (`console.log`) chiqadi.
+하나의 `userId`로 0.2초 간격으로 12번(약 2.4초) 요청합니다. 버킷은 토큰 5개로 시작하고 greedy refill로 2초마다 1개씩 다시 채워지므로, 실행 도중 토큰이 1개 더 생깁니다. 실측 결과는 **6번 통과, 6번 `429`**입니다.
 
-## k6 bilan yuklama testi
+## k6 부하 테스트
 
 ```powershell
 k6 run k6/nolock.js
@@ -105,41 +101,65 @@ k6 run k6/optimistic.js
 k6 run k6/redis.js
 ```
 
-Har biri 300 VU, 300 iteratsiya bilan `FLASH50` (yoki `FLASH50-REDIS`) kampaniyasiga hujum qiladi. `redis.js` o'zi `setup()` orqali kampaniyani yaratadi va sinxronlaydi — boshqalari uchun avval yuqoridagi seed skriptini ishga tushiring.
+각 스크립트는 300 VU, 300회 반복으로 `FLASH50`(또는 `FLASH50-REDIS`) 캠페인에 요청을 보냅니다. `redis.js`는 `setup()`에서 캠페인을 직접 생성하고, 나머지는 먼저 위의 seed 스크립트를 실행해야 합니다.
 
-## Natijalar (k6, 300 parallel so'rov, 50 dona kupon, Windows/Docker Desktop lokal muhit)
+전체 비교를 한 번에 재현하려면 (서버 실행 중, 브라우저 콘솔은 닫은 상태):
 
-| Strategiya | Throughput | avg latency | p95 latency | Muvaffaqiyatli / Sold out | Oversell bormi? |
-|---|---|---|---|---|---|
-| Locksiz | 80.4 req/s | 2.89s | 3.58s | 300 / 0 (hammasi "SUCCESS"!) | **HA — 6x oversell (300 ta 50 o'rniga)** |
-| SELECT FOR UPDATE | 156.4 req/s | 1.06s | 1.74s | 50 / 250 | Yo'q |
-| Optimistic lock | 114.1 req/s | 2.2s | 2.53s | 50 / 250 | Yo'q |
-| Redis atomik | 240.8 req/s | 390ms | 582ms | 50 / 250 | Yo'q |
-
-**Locksiz nega eng sekin va eng past throughput'ga ega, garchi "lock yo'q" bo'lsa ham?** Chunki u qachon to'xtashni bilmaydi — 300 ta so'rovning barchasi to'liq yozish ishini (UPDATE + INSERT) bajaradi, hech biri arzon "SOLD_OUT" bilan erta chiqib ketmaydi. Qolgan uch strategiya 50 tadan keyin qolgan 250 tasini deyarli bepul rad etadi — shu farq throughput'ni ham, latency'ni ham belgilaydi.
-
-**Qolgan uchtasini xolis solishtirish** (har biri xuddi 50 yozish + 250 arzon rad bajardi):
-- **Redis eng tez** — Lua skript butunlay Redis xotirasida ishlaydi, Postgres'ga hot path'da umuman murojaat qilinmaydi (yozish `@Async` bilan fonda).
-- **SELECT FOR UPDATE ikkinchi** — lock kutish bor, lekin toza, bitta navbat, retry yo'q.
-- **Optimistic lock eng sekin uchdan** — 300 ta thread bir xil qatorga bir vaqtda hujum qilganda ko'p to'qnashuv yuz beradi, har bir muvaffaqiyatsiz urinish qayta boshidan bazaga borishni talab qiladi (retry storm). Bu — optimistic lock'ning past raqobatda tez, yuqori raqobatda esa pessimistic lock'dan ham sekin bo'lishi mumkinligining klassik namunasi.
-
-## Frontend — jonli konsol
-
-`frontend/index.html` — bitta mustaqil HTML fayl (build kerak emas, hech qanday dependency yo'q). Ikki ustunli: chapda kupon olish paneli (strategiya tanlash, kampaniya kodi, user ID, "Kupon olish" tugmasi), o'ngda jonli taxta (qolgan miqdor — katta raqam, serverdan har 1.2 soniyada o'qiladi; SUCCESS/SOLD_OUT/ALREADY_CLAIMED/CAMPAIGN_NOT_STARTED/RATE_LIMITED bo'yicha shu sessiyadagi hisoblagichlar; oxirgi 60 ta urinishning jonli logi).
-
-Ishga tushirish:
 ```powershell
-.\gradlew.bat bootRun
+powershell -ExecutionPolicy Bypass -File scripts\bench.ps1
 ```
-keyin `frontend\index.html` faylini brauzerda oching (fayl tizimidan to'g'ridan-to'g'ri, alohida server shart emas). "Server manzili" maydoni standart `http://localhost:8080` — boshqa portda ishlatsangiz shu yerda o'zgartiring.
 
-Buning uchun backend'ga ikkita narsa qo'shildi:
-- **`GET /api/v1/{strategy}/campaigns/{code}`** — har bir strategiya uchun (jami 4 ta), qolgan/jami miqdorni qaytaradi. Redis strategiyasida bu Postgres'dan emas, to'g'ridan-to'g'ri Redis'dagi jonli `stock` kalitidan o'qiydi — chunki productionda ham "haqiqat manbai" shu.
-- **CORS** (`com.flashdrop.web.CorsConfig`) — `/api/**` uchun ochiq, chunki frontend fayl sifatida (`file://`) yoki boshqa portdan ochiladi, brauzer standart holatda buni bloklaydi. Faqat lokal demo uchun — productionda aniq origin'lar ro'yxati kerak bo'lardi.
+전략마다 seed → 워밍업 1회 → 측정 3회를 수행하고, 결과를 `docs/evidence/bench/`(`summary.csv`, `results.csv`, 실행별 JSON, `environment.txt`)에 저장합니다.
 
-Redis strategiyasi tanlanganda qo'shimcha "Redis'ni sinxronlash (init)" tugmasi chiqadi — PowerShell'ga chiqmasdan, to'g'ridan-to'g'ri sahifadan campaign yaratish/qayta tiklash mumkin. (Sync bosishdan oldin sahifa mavjud bo'lmagan kampaniyani so'rab turadi — bu normal, `com.flashdrop.web.GlobalExceptionHandler` buni server konsolida shovqin qilmaydigan toza 404'ga aylantiradi.)
+## 결과 (k6, 동시 요청 300건, 쿠폰 50장, Windows/Docker Desktop 로컬 환경, 2026-10-09)
 
-## Keyingi qadamlar
+측정 방법: `scripts/bench.ps1`로 전략마다 워밍업 1회(결과 제외) 후 3회 실행한 **중앙값**입니다. 실패한 요청이 하나라도 있는 실행은 무효로 처리하고 다시 실행했습니다(아래 "측정 중 발견한 문제" 참고).
 
-- `campaign_redis.remaining_quantity` hozircha faqat init paytida yoziladi, keyin Redis bilan sinxronlanmaydi — Postgres'dagi holatni yakunda moslashtirish (reconciliation) uchun alohida job kerak bo'ladi.
-- Frontend'dagi hisoblagichlar shu brauzer sessiyasiga xos (sahifa yangilansa nolga tushadi) — ko'p odam bir vaqtda kuzatishi kerak bo'lsa, umumiy metrikalar uchun backend'da alohida endpoint kerak bo'lardi.
+| 전략              | 처리량    | 평균 지연 | p95 지연 | 성공 / 품절               | 실제 발급 (DB)          |
+| ----------------- | --------- | --------- | -------- | ------------------------- | ----------------------- |
+| 락 없음           | 307 req/s | 531ms     | 867ms    | 300 / 0 (전부 "SUCCESS"!) | **300 — 6배 초과 발급** |
+| SELECT FOR UPDATE | 188 req/s | 880ms     | 1465ms   | 50 / 250                  | 50                      |
+| 낙관적 락         | 331 req/s | 677ms     | 831ms    | 50 / 250                  | 50                      |
+| Redis 원자적 처리 | 873 req/s | 123ms     | 178ms    | 50 / 250                  | 50                      |
+
+**락 없음은 빠르지만 틀립니다.** 락 대기가 없으니 SELECT FOR UPDATE보다 처리량은 높지만, 50장 대신 300장을 발급했습니다. 그런데도 `remaining_quantity`는 0이 아니라 46으로 남았습니다(실측). 모든 요청이 같은 값을 읽고 서로의 쓰기를 덮어쓴 *lost update*입니다. 정합성이 깨진 구현의 속도는 비교 대상이 될 수 없습니다.
+
+**정확한 세 전략의 비교** (모두 쓰기 50건 + 거절 250건 수행):
+
+- **Redis가 가장 빠름** (SELECT FOR UPDATE 대비 처리량 4.6배, p95 8.2배 개선): Lua 스크립트가 Redis 메모리에서 원자적으로 실행되고, hot path에서 Postgres에 전혀 접근하지 않습니다(쓰기는 `@Async`로 백그라운드 처리).
+- **낙관적 락이 SELECT FOR UPDATE보다 빠름** (처리량 1.76배): `findByCodeForUpdate`는 재고를 확인하기 **전에** 행 락을 잡기 때문에, 품절 후 거절될 250건까지 모두 한 줄로 대기합니다. 낙관적 락은 50건의 쓰기 주변에서만 충돌하고, 재고가 0이 된 뒤의 요청은 락 없이 병렬로 읽고 바로 `SOLD_OUT`을 반환합니다.
+- **SELECT FOR UPDATE가 가장 느림:** 정확하지만 거절될 요청까지 모든 요청을 직렬화합니다. 개선 방향: 락을 잡기 전에 일반 SELECT로 품절 여부를 먼저 확인하면, 품절 이후 요청의 락 대기를 없앨 수 있습니다.
+
+**이전 측정과의 차이:** 이 README의 이전 버전에서는 락 없음과 낙관적 락이 가장 느리게 나왔습니다. 당시에는 워밍업 없이 단일 실행 결과를 사용했으므로, JIT와 커넥션 풀이 준비되지 않은 상태가 반영된 것으로 보고 위 방법으로 다시 측정했습니다.
+
+**측정 중 발견한 문제:** 20회 시도 중 4회에서 84–85건의 요청이 TCP 단계에서 거부되었습니다(`connection refused`). 거부 건수가 매번 거의 같다는 점에서 우연한 네트워크 오류가 아니라 OS의 listen backlog가 가득 찬 것으로 판단됩니다(Tomcat `accept-count: 500`보다 OS 제한이 낮음). 이런 실행은 성공/품절 합계가 300보다 작아져 처리량이 실제보다 좋아 보이므로, `bench.ps1`이 자동으로 무효 처리하고 재실행합니다. 무효 실행 기록도 `results.csv`에 남겨 두었습니다.
+
+## 프론트엔드 — 실시간 콘솔
+
+`frontend/index.html`은 빌드도 의존성도 필요 없는 단일 HTML 파일입니다. 두 개의 컬럼으로 구성됩니다. 왼쪽은 쿠폰 발급 패널(전략 선택, 캠페인 코드, user ID, 발급 버튼), 오른쪽은 실시간 보드(서버에서 1.2초마다 읽어오는 남은 수량, 이번 세션의 결과별 카운터, 최근 60건의 실시간 로그)입니다.
+
+운영 환경에서는 페이지와 API가 같은 도메인에서 제공되므로 "서버 주소" 필드가 자동으로 현재 주소로 설정됩니다. 로컬에서는 파일을 브라우저에서 직접 열면 기본값 `http://localhost:8080`을 사용합니다.
+
+이를 위해 백엔드에 두 가지를 추가했습니다.
+
+- **`GET /api/v1/{strategy}/campaigns/{code}`**: 전략별(총 4개)로 남은/전체 수량을 반환합니다. Redis 전략은 Postgres가 아닌 Redis의 실시간 `stock` 키에서 직접 읽습니다.
+- **CORS** (`com.flashdrop.web.CorsConfig`): 로컬에서 파일(`file://`)로 열 때를 위해 `/api/**`에 열려 있습니다.
+
+Redis 전략을 선택하면 "Redis 동기화(init)" 버튼이 추가로 나타나, 페이지에서 바로 캠페인을 생성하거나 초기화할 수 있습니다.
+
+## 운영 배포
+
+```bash
+cp .env.prod.example .env
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+- `app`: 멀티 스테이지 `Dockerfile`로 빌드된 Spring Boot 애플리케이션. root가 아닌 사용자로 실행되며 메모리는 1GB로 제한됩니다.
+- `web`: Caddy가 `frontend/`를 정적 파일로 제공하고 `/api/*`를 애플리케이션으로 프록시합니다.
+- `seed`: 시작 시 데모 캠페인 4개를 생성합니다. `docker compose -f docker-compose.prod.yml run --rm seed`로 언제든 데모를 초기화할 수 있습니다.
+- Postgres와 Redis 포트는 외부에 노출하지 않으며, `POSTGRES_PASSWORD`는 `openssl rand -hex 24`로 생성합니다.
+
+## 다음 단계
+
+- `campaign_redis.remaining_quantity`는 현재 초기화 시에만 기록되고 이후 Redis와 동기화되지 않습니다. Postgres 상태를 최종적으로 맞추는 reconciliation 작업이 필요합니다.
+- 프론트엔드 카운터는 브라우저 세션별로 동작합니다(새로고침 시 초기화). 여러 사람이 동시에 보려면 백엔드에 공용 지표 엔드포인트가 필요합니다.
