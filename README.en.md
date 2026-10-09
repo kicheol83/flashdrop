@@ -90,7 +90,7 @@ To see it work:
 k6 run k6/rate-limit-check.js
 ```
 
-It sends 12 requests with one `userId`, 0.2 s apart — the first 5 pass and the remaining 7 should return `429`.
+It sends 12 requests with one `userId`, 0.2 s apart (about 2.4 s). The bucket starts with 5 tokens and refills greedily, one token every 2 seconds, so one more token appears during the run. The measured result is **6 pass, 6 return `429`**.
 
 ## Load testing with k6
 
@@ -103,21 +103,35 @@ k6 run k6/redis.js
 
 Each runs 300 VUs and 300 iterations against the `FLASH50` (or `FLASH50-REDIS`) campaign. `redis.js` creates and syncs its campaign in `setup()`; for the others, run the seed script above first.
 
-## Results (k6, 300 concurrent requests, 50 coupons, local Windows/Docker Desktop)
+To reproduce the whole comparison in one go (server running, browser console closed):
 
-| Strategy | Throughput | avg latency | p95 latency | Success / Sold out | Oversell? |
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bench.ps1
+```
+
+For each strategy it seeds, does 1 warm-up run and 3 measured runs, and saves everything to `docs/evidence/bench/` (`summary.csv`, `results.csv`, per-run JSON, `environment.txt`).
+
+## Results (k6, 300 concurrent requests, 50 coupons, local Windows/Docker Desktop, 2026-10-09)
+
+Method: **median** of 3 runs per strategy via `scripts/bench.ps1`, after 1 discarded warm-up run. Any run with even one failed request was marked invalid and re-run (see "A problem found while measuring" below).
+
+| Strategy | Throughput | avg latency | p95 latency | Success / Sold out | Actually issued (DB) |
 |---|---|---|---|---|---|
-| No lock | 80.4 req/s | 2.89s | 3.58s | 300 / 0 (all "SUCCESS"!) | **YES — 6x oversell (300 instead of 50)** |
-| SELECT FOR UPDATE | 156.4 req/s | 1.06s | 1.74s | 50 / 250 | No |
-| Optimistic lock | 114.1 req/s | 2.2s | 2.53s | 50 / 250 | No |
-| Redis atomic | 240.8 req/s | 390ms | 582ms | 50 / 250 | No |
+| No lock | 307 req/s | 531ms | 867ms | 300 / 0 (all "SUCCESS"!) | **300 — 6x oversell** |
+| SELECT FOR UPDATE | 188 req/s | 880ms | 1465ms | 50 / 250 | 50 |
+| Optimistic lock | 331 req/s | 677ms | 831ms | 50 / 250 | 50 |
+| Redis atomic | 873 req/s | 123ms | 178ms | 50 / 250 | 50 |
 
-**Why is the no-lock strategy the slowest, with the lowest throughput, despite having "no lock"?** Because it never knows when to stop — all 300 requests perform the full write (UPDATE + INSERT), and none exits early with a cheap "SOLD_OUT". The other three reject the remaining 250 almost for free after the first 50, and that difference drives both throughput and latency.
+**No lock is fast, but wrong.** With no lock waiting it beats SELECT FOR UPDATE on throughput, yet it issued 300 coupons instead of 50 — and `remaining_quantity` still read 46, not 0 (measured). Every request read the same value and overwrote the others: a classic *lost update*. The speed of an incorrect implementation is not a meaningful comparison.
 
-**A fair comparison of the other three** (each did exactly 50 writes + 250 cheap rejections):
-- **Redis is fastest** — the Lua script runs entirely in Redis memory, and the hot path never touches Postgres (the write is `@Async` in the background).
-- **SELECT FOR UPDATE is second** — there is lock waiting, but it is a clean single queue with no retries.
-- **Optimistic lock is the slowest of the three** — when 300 threads hit the same row at once, conflicts are frequent and every failed attempt must go back to the database from scratch (a retry storm). It is the classic example of optimistic locking being fast under low contention and slower than pessimistic locking under high contention.
+**Comparing the three correct strategies** (each did 50 writes + 250 rejections):
+- **Redis is fastest** (4.6x the throughput of SELECT FOR UPDATE, 8.2x better p95): the Lua script runs atomically in Redis memory, and the hot path never touches Postgres (the write is `@Async` in the background).
+- **Optimistic locking beats SELECT FOR UPDATE** (1.76x throughput): `findByCodeForUpdate` takes the row lock **before** checking stock, so even the 250 requests that will be rejected after sell-out wait in a single queue. Optimistic locking only conflicts around the 50 writes; once stock hits 0, the remaining requests read in parallel without locks and return `SOLD_OUT` immediately.
+- **SELECT FOR UPDATE is the slowest:** correct, but it serializes every request, including the ones that will be rejected. Possible improvement: check for sell-out with a plain SELECT before taking the lock, removing lock waits for requests that arrive after sell-out.
+
+**Difference from the earlier measurement:** a previous version of this README showed no lock and optimistic locking as the slowest. That table came from single runs without warm-up, which likely reflected a cold JIT and connection pool, so the results were re-measured with the method above.
+
+**A problem found while measuring:** in 4 of 20 attempts, 84–85 requests were refused at the TCP level (`connection refused`). Because the count was almost identical every time, this is not random network noise but the OS listen backlog filling up (the OS limit is lower than Tomcat's `accept-count: 500`). Such runs end with success + sold out below 300 and look faster than they really are, so `bench.ps1` marks them invalid and re-runs them automatically. The invalid runs are kept in `results.csv` as a record.
 
 ## Frontend — live console
 
@@ -135,8 +149,13 @@ When the Redis strategy is selected, an extra "sync Redis (init)" button appears
 
 ```bash
 cp .env.prod.example .env
-docker compose -f docker-compose.prod.yml up -d --build
+./scripts/deploy.sh
+./scripts/rollback.sh
 ```
+
+- `deploy.sh` aborts if the upstream branch contains merge-conflict markers, fast-forwards, builds the image, tags it with the commit SHA as well and records the SHA in `.deploy-history`.
+- `rollback.sh` switches back to the previous SHA's image (or the one given as an argument) without rebuilding. The rollback command takes about 1.2 s; the app returns 502 for about 8 s while Spring starts.
+- The server takes a daily `pg_dump -Fc` backup at 03:00 (kept 7 days); the restore test brings back 11/11 tables in 0.22 s.
 
 - `app`: the Spring Boot application built by a multi-stage `Dockerfile`, running as a non-root user with a 1 GB memory limit.
 - `web`: Caddy serves `frontend/` as static files and proxies `/api/*` to the application.

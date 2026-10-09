@@ -1,6 +1,10 @@
-# FlashDrop — 선착순 발급 tizimi
+# FlashDrop — 선착순 kupon berish tizimi
 
-10,000 dona kupon, minglab parallel so'rov, bittasi ham ortiqcha berilmasligi kerak. Bir xil biznes qoidasini 4 xil konkurentlik strategiyasi bilan yechib, k6 bilan solishtirish uchun loyiha.
+[English](./README.en.md) | [한국어](./README.md) | **O'zbekcha**
+
+50 dona kupon, yuzlab parallel so'rov va bittasi ham ortiqcha berilmasligi kerak degan shart. Bir xil biznes qoidasini 4 xil parallellik strategiyasi bilan yechib, k6 bilan solishtiradigan loyiha.
+
+**Live Demo:** https://flashdrop.javohir.dev
 
 ## 4 ta yondashuv — barchasi tayyor
 
@@ -35,16 +39,10 @@ Java 21 (virtual thread'lar testlarda ishlatilgan) · Spring Boot 3.5 · Postgre
 
 ```powershell
 docker compose up -d
-```
-
-Gradle wrapper qo'shilmagan (sandbox'da internet cheklovi tufayli generatsiya qila olmadim):
-
-```powershell
-gradle wrapper --gradle-version 8.10
 .\gradlew.bat bootRun
 ```
 
-yoki IntelliJ IDEA'da papkani oching — Gradle avtomatik sinxronlashadi.
+yoki IntelliJ IDEA'da papkani oching, Gradle avtomatik sinxronlanadi.
 
 ## Demo kampaniyalarni yaratish
 
@@ -75,8 +73,6 @@ Har bir strategiya o'z Testcontainers-asosidagi konkurentlik testiga ega (`*Conc
 - `NoLockConcurrencyTest` — **qizil kutiladi**: oversell'ni isbotlaydi (`successCount` 50'dan oshadi yoki `remaining_quantity` manfiyga tushadi)
 - `ForUpdateConcurrencyTest`, `OptimisticConcurrencyTest`, `RedisConcurrencyTest` — **yashil kutiladi**: aniq 50 ta muvaffaqiyatli claim, ortiqcha yo'q
 
-Bu sandbox muhitida (internet cheklovi + Docker yo'qligi tufayli) testlarni haqiqatda ishga tushirib tekshira olmadim — kodni diqqat bilan qo'lda tekshirdim, lekin birinchi marta ishga tushirganingizda natijani menga ayting, kerak bo'lsa birga tuzatamiz.
-
 ## Rate limiting
 
 Barcha 4 strategiyaning `/claim` endpoint'i bitta umumiy interceptor orqali himoyalangan (`com.flashdrop.ratelimit`), alohida-alohida yozilmagan — `/api/v1/*/campaigns/*/claim` pattern'iga mos keladigan har qanday so'rov shu orqali o'tadi.
@@ -94,7 +90,7 @@ Ishlashini ko'rish uchun:
 k6 run k6/rate-limit-check.js
 ```
 
-Bitta userId bilan 12 marta ketma-ket so'raydi (0.2s oraliq bilan) — birinchi 5 tasi o'tadi, qolgan 7 tasi `429` bilan qaytishi kerak. Har bir urinish natijasi konsolga (`console.log`) chiqadi.
+Bitta userId bilan 0.2s oraliq bilan 12 marta (taxminan 2.4s) so'raydi. Bucket 5 ta token bilan boshlanadi va greedy refill tufayli har 2 soniyada 1 tadan qayta to'ladi, shuning uchun test davomida yana bitta token qo'shiladi. O'lchangan natija: **6 tasi o'tadi, 6 tasi `429`**. Har bir urinish natijasi konsolga (`console.log`) chiqadi.
 
 ## k6 bilan yuklama testi
 
@@ -107,21 +103,35 @@ k6 run k6/redis.js
 
 Har biri 300 VU, 300 iteratsiya bilan `FLASH50` (yoki `FLASH50-REDIS`) kampaniyasiga hujum qiladi. `redis.js` o'zi `setup()` orqali kampaniyani yaratadi va sinxronlaydi — boshqalari uchun avval yuqoridagi seed skriptini ishga tushiring.
 
-## Natijalar (k6, 300 parallel so'rov, 50 dona kupon, Windows/Docker Desktop lokal muhit)
+Butun taqqoslashni bir martada takrorlash uchun (server ishlab turgan, brauzer konsoli yopiq holatda):
 
-| Strategiya | Throughput | avg latency | p95 latency | Muvaffaqiyatli / Sold out | Oversell bormi? |
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bench.ps1
+```
+
+Har bir strategiya uchun seed → 1 ta qizdirish (warm-up) → 3 ta o'lchov run'ini bajaradi va natijalarni `docs/evidence/bench/` ga saqlaydi (`summary.csv`, `results.csv`, har run'ning JSON'i, `environment.txt`).
+
+## Natijalar (k6, 300 parallel so'rov, 50 dona kupon, Windows/Docker Desktop lokal muhit, 2026-10-09)
+
+O'lchash usuli: `scripts/bench.ps1` bilan har strategiya uchun 1 ta qizdirish run'idan (hisobga olinmaydi) keyingi 3 ta run'ning **median**'i. Bitta bo'lsa ham muvaffaqiyatsiz so'rovi bor run yaroqsiz deb belgilanib, qayta ishga tushirildi (pastdagi "O'lchash paytida topilgan muammo"ga qarang).
+
+| Strategiya | Throughput | avg latency | p95 latency | Muvaffaqiyatli / Sold out | Haqiqatda chiqarilgan (DB) |
 |---|---|---|---|---|---|
-| Locksiz | 80.4 req/s | 2.89s | 3.58s | 300 / 0 (hammasi "SUCCESS"!) | **HA — 6x oversell (300 ta 50 o'rniga)** |
-| SELECT FOR UPDATE | 156.4 req/s | 1.06s | 1.74s | 50 / 250 | Yo'q |
-| Optimistic lock | 114.1 req/s | 2.2s | 2.53s | 50 / 250 | Yo'q |
-| Redis atomik | 240.8 req/s | 390ms | 582ms | 50 / 250 | Yo'q |
+| Locksiz | 307 req/s | 531ms | 867ms | 300 / 0 (hammasi "SUCCESS"!) | **300 — 6x oversell** |
+| SELECT FOR UPDATE | 188 req/s | 880ms | 1465ms | 50 / 250 | 50 |
+| Optimistic lock | 331 req/s | 677ms | 831ms | 50 / 250 | 50 |
+| Redis atomik | 873 req/s | 123ms | 178ms | 50 / 250 | 50 |
 
-**Locksiz nega eng sekin va eng past throughput'ga ega, garchi "lock yo'q" bo'lsa ham?** Chunki u qachon to'xtashni bilmaydi — 300 ta so'rovning barchasi to'liq yozish ishini (UPDATE + INSERT) bajaradi, hech biri arzon "SOLD_OUT" bilan erta chiqib ketmaydi. Qolgan uch strategiya 50 tadan keyin qolgan 250 tasini deyarli bepul rad etadi — shu farq throughput'ni ham, latency'ni ham belgilaydi.
+**Locksiz usul tez, lekin noto'g'ri.** Lock kutish yo'qligi uchun throughput'i SELECT FOR UPDATE'dan yuqori, ammo 50 o'rniga 300 ta kupon chiqardi. Shunga qaramay `remaining_quantity` 0 emas, 46 ko'rsatdi (o'lchangan). Hamma so'rov bir xil qiymatni o'qib, bir-birining yozuvini ustidan bosgan: klassik *lost update*. Noto'g'ri ishlaydigan implementatsiyaning tezligini solishtirish ma'noga ega emas.
 
-**Qolgan uchtasini xolis solishtirish** (har biri xuddi 50 yozish + 250 arzon rad bajardi):
-- **Redis eng tez** — Lua skript butunlay Redis xotirasida ishlaydi, Postgres'ga hot path'da umuman murojaat qilinmaydi (yozish `@Async` bilan fonda).
-- **SELECT FOR UPDATE ikkinchi** — lock kutish bor, lekin toza, bitta navbat, retry yo'q.
-- **Optimistic lock eng sekin uchdan** — 300 ta thread bir xil qatorga bir vaqtda hujum qilganda ko'p to'qnashuv yuz beradi, har bir muvaffaqiyatsiz urinish qayta boshidan bazaga borishni talab qiladi (retry storm). Bu — optimistic lock'ning past raqobatda tez, yuqori raqobatda esa pessimistic lock'dan ham sekin bo'lishi mumkinligining klassik namunasi.
+**To'g'ri ishlaydigan uchta strategiyani solishtirish** (har biri 50 ta yozish + 250 ta rad bajardi):
+- **Redis eng tez** (SELECT FOR UPDATE'ga nisbatan throughput 4.6x, p95 8.2x yaxshi): Lua skript Redis xotirasida atomik ishlaydi, hot path'da Postgres'ga umuman murojaat qilinmaydi (yozish `@Async` bilan fonda).
+- **Optimistic lock SELECT FOR UPDATE'dan tez** (throughput 1.76x): `findByCodeForUpdate` qoldiqni tekshirishdan **oldin** row lock oladi, shuning uchun sotuv tugagandan keyin rad etiladigan 250 ta so'rov ham bitta navbatda kutadi. Optimistic lock esa faqat 50 ta yozish atrofida to'qnashadi; qoldiq 0 bo'lgach, qolgan so'rovlar lock'siz parallel o'qib, darhol `SOLD_OUT` qaytaradi.
+- **SELECT FOR UPDATE eng sekin:** to'g'ri ishlaydi, lekin rad etiladiganlari bilan birga hamma so'rovni ketma-ket qiladi. Yaxshilash yo'li: lock olishdan oldin oddiy SELECT bilan sotuv tugaganini tekshirish, shunda sotuvdan keyingi so'rovlar lock kutmaydi.
+
+**Oldingi o'lchovdan farqi:** README'ning oldingi versiyasida locksiz usul va optimistic lock eng sekin chiqqan edi. U jadval qizdirishsiz, bitta run natijasidan olingan, ehtimol JIT va connection pool hali tayyor bo'lmagan holatni aks ettirgan, shuning uchun yuqoridagi usul bilan qayta o'lchandi.
+
+**O'lchash paytida topilgan muammo:** 20 ta urinishdan 4 tasida 84–85 ta so'rov TCP darajasida rad etildi (`connection refused`). Rad etilganlar soni har safar deyarli bir xil bo'lgani uchun bu tasodifiy tarmoq xatosi emas, balki OS'ning listen backlog'i to'lib qolgani (OS cheklovi Tomcat'dagi `accept-count: 500` dan past). Bunday run'larda muvaffaqiyatli + sold out yig'indisi 300 dan kam bo'lib, natija haqiqatdan tezroq ko'rinadi, shuning uchun `bench.ps1` ularni avtomatik yaroqsiz deb belgilab, qayta ishga tushiradi. Yaroqsiz run'lar ham `results.csv` da qayd sifatida saqlanadi.
 
 ## Frontend — jonli konsol
 
@@ -138,6 +148,22 @@ Buning uchun backend'ga ikkita narsa qo'shildi:
 - **CORS** (`com.flashdrop.web.CorsConfig`) — `/api/**` uchun ochiq, chunki frontend fayl sifatida (`file://`) yoki boshqa portdan ochiladi, brauzer standart holatda buni bloklaydi. Faqat lokal demo uchun — productionda aniq origin'lar ro'yxati kerak bo'lardi.
 
 Redis strategiyasi tanlanganda qo'shimcha "Redis'ni sinxronlash (init)" tugmasi chiqadi — PowerShell'ga chiqmasdan, to'g'ridan-to'g'ri sahifadan campaign yaratish/qayta tiklash mumkin. (Sync bosishdan oldin sahifa mavjud bo'lmagan kampaniyani so'rab turadi — bu normal, `com.flashdrop.web.GlobalExceptionHandler` buni server konsolida shovqin qilmaydigan toza 404'ga aylantiradi.)
+
+## Production'ga deploy
+
+```bash
+cp .env.prod.example .env
+./scripts/deploy.sh
+./scripts/rollback.sh
+```
+
+- `deploy.sh` upstream'da merge conflict belgilari bo'lsa deploy'ni to'xtatadi, `--ff-only` bilan yangilaydi, image'ni build qilib commit SHA bilan ham tag qiladi va SHA'ni `.deploy-history` ga yozadi.
+- `rollback.sh` oldingi SHA image'iga build'siz qaytadi (yoki argumentda berilgan SHA'ga). Rollback buyrug'i ~1.2 s; Spring ilovasi ishga tushguncha ~8 s 502 bo'ladi.
+- `app`: ko'p bosqichli `Dockerfile` bilan build qilingan Spring Boot ilovasi, root bo'lmagan foydalanuvchida, 1 GB xotira cheklovi bilan ishlaydi.
+- `web`: Caddy `frontend/` ni statik fayl sifatida beradi va `/api/*` ni ilovaga proxy qiladi.
+- `seed`: ishga tushganda 4 ta demo kampaniya yaratadi. `docker compose -f docker-compose.prod.yml run --rm seed` bilan demoni istalgan payt qayta tiklash mumkin.
+- Postgres va Redis portlari tashqariga ochilmagan, `POSTGRES_PASSWORD` `openssl rand -hex 24` bilan yaratiladi.
+- Serverda har kuni 03:00 da `pg_dump -Fc` zaxira nusxasi olinadi (7 kun saqlanadi), tiklash testi: 11/11 jadval, 0.22 s.
 
 ## Keyingi qadamlar
 
